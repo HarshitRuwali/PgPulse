@@ -1,0 +1,42 @@
+services:
+  master_db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: pgpulse
+      POSTGRES_PASSWORD: pgpulse
+      POSTGRES_DB: pgpulse
+    command: >
+      postgres
+      -c wal_level=replica
+      -c max_wal_senders=10
+      -c max_replication_slots=10
+      -c hot_standby=on
+    ports:
+      - "5432:5432"
+    volumes:
+      - master_db_data:/var/lib/postgresql
+      - ./scripts/00-init-replication.sh:/docker-entrypoint-initdb.d/00-init-replication.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgpulse"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  replica_db:
+    image: postgres:18
+    environment:
+      PGUSER: pgpulse
+      PGPASSWORD: pgpulse
+    ports:
+      - "5433:5432"
+    volumes:
+      - replica_db_data:/var/lib/postgresql
+      - ./scripts/start-replica.sh:/start-replica.sh
+    entrypoint: /start-replica.sh
+    depends_on:
+      master_db:
+        condition: service_healthy
+
+volumes:
+  master_db_data:
+  replica_db_data:
