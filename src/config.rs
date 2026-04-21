@@ -1,5 +1,5 @@
-use std::fs;
 use serde::Deserialize;
+use std::fs;
 
 #[derive(Deserialize)]
 pub struct DbConfig {
@@ -38,7 +38,6 @@ pub struct Config {
     pub server: ServerConfig,
     pub thresholds: ThresholdsConfig,
 }
-
 
 pub fn load_config(path: &str) -> anyhow::Result<Config> {
     let file_content = fs::read_to_string(path)?;

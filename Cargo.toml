@@ -9,3 +9,4 @@ anyhow = "1.0"
 serde  = {version  = "1", features = ["derive"] }
 serde_yaml = "0.9"
 clap = { version = "4.0", features = ["derive"] }
+tokio-postgres = "0.7.17"
