@@ -3,18 +3,18 @@ polling:
   long_query_threshold_seconds: 30
 
 primary:
-  host: "primary-db"
+  host: localhost
   port: 5432
-  name: "postgres"
-  user: "observer"
-  password: "secret"
+  name: postgres
+  user: pgpulse
+  password: pgpulse
 
 replica:
-  host: "replica-db"
+  host: localhost
   port: 5432
-  name: "postgres"
-  user: "observer"
-  password: "secret"
+  name: postgres
+  user: pgpulse
+  password: pgpulse
 
 server:
   host: "0.0.0.0"
