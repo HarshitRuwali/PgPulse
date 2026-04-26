@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::fs;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct DbConfig {
     pub host: String,
     pub port: u16,
@@ -10,19 +10,19 @@ pub struct DbConfig {
     pub password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct PollingConfig {
     pub interval_seconds: u64,
     pub long_query_threshold_seconds: u64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ThresholdConfig {
     pub replay_lag_warning_seconds: u64,
     pub replay_lag_critical_seconds: u64,
@@ -30,7 +30,7 @@ pub struct ThresholdConfig {
     pub lsn_gap_critical_bytes: u64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Config {
     pub polling: PollingConfig,
     pub primary: DbConfig,
