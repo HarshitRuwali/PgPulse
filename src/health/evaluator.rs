@@ -1,14 +1,5 @@
 use crate::config::ThresholdConfig;
-use crate::models::ReplicationMetrics;
-use serde::Serialize;
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum HealthStatus {
-    Healthy,
-    Warning,
-    Critical,
-}
+use crate::models::{HealthStatus, ReplicationMetrics};
 
 pub fn evaluate_health(replica: &ReplicationMetrics, threshold: &ThresholdConfig) -> HealthStatus {
     // let Some(metrics) = replica else {

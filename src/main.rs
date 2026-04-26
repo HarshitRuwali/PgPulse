@@ -7,6 +7,7 @@ mod models;
 use crate::collectors::{replication::collect_replica_metrics, wal::collect_primary_metrics};
 use clap::Parser;
 use health::evaluator::evaluate_health;
+use models::MetricSnapshot;
 use tokio;
 use tracing::info;
 use tracing_subscriber;
@@ -41,7 +42,15 @@ async fn main() -> anyhow::Result<()> {
     let health_status = evaluate_health(&replia_metrics, &config.threshold);
     info!("Health Status: {:?}", health_status);
 
-    let app = api::create_router();
+    let snapshot = MetricSnapshot {
+        replication_metrics: replia_metrics,
+        primary_metrics,
+        health_status,
+        collected_at: chrono::Utc::now(),
+    };
+
+    // API server
+    let app = api::create_router(snapshot);
     let listener =
         tokio::net::TcpListener::bind(format!("{}:{}", config.server.host, config.server.port))
             .await
