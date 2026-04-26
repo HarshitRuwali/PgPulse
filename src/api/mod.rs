@@ -1,9 +1,9 @@
-use axum::{Router, routing::get};
 mod routes;
 
-use crate::models::MetricSnapshot;
+use crate::storage::in_memory::MetricStore;
+use axum::{Router, routing::get};
 
-pub fn create_router(snapshot: MetricSnapshot) -> Router {
+pub fn create_router(snapshot: MetricStore) -> Router {
     Router::new()
         .route("/health", get(routes::health_handler))
         .route(

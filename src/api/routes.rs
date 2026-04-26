@@ -1,6 +1,7 @@
-use crate::models::MetricSnapshot;
+use crate::storage::in_memory::MetricStore;
 use axum::{Json, extract::State};
 use serde_json::{Value, json};
+use tracing::info;
 
 pub async fn health_handler() -> Json<Value> {
     Json(json!({
@@ -9,7 +10,9 @@ pub async fn health_handler() -> Json<Value> {
     }))
 }
 
-pub async fn replication_status_handler(State(snapshot): State<MetricSnapshot>) -> Json<Value> {
+pub async fn replication_status_handler(State(snapshot): State<MetricStore>) -> Json<Value> {
+    info!("Received request for replication status");
+    let snapshot = snapshot.read_snapshot().await;
     Json(json!({
         "status": snapshot.health_status,
         "replication_data": {

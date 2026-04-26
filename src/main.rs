@@ -4,7 +4,10 @@ mod config;
 mod db;
 mod health;
 mod models;
+mod storage;
+
 use crate::collectors::{replication::collect_replica_metrics, wal::collect_primary_metrics};
+use crate::storage::in_memory::MetricStore;
 use clap::Parser;
 use health::evaluator::evaluate_health;
 use models::MetricSnapshot;
@@ -49,8 +52,12 @@ async fn main() -> anyhow::Result<()> {
         collected_at: chrono::Utc::now(),
     };
 
+    // poll and update the snapshot periodically
+    let metric_store = MetricStore::new();
+    metric_store.update_snapshot(snapshot).await;
+
     // API server
-    let app = api::create_router(snapshot);
+    let app = api::create_router(metric_store);
     let listener =
         tokio::net::TcpListener::bind(format!("{}:{}", config.server.host, config.server.port))
             .await

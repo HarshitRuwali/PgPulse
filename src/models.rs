@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ReplicationMetrics {
     pub replay_lag_seconds: Option<i64>,
     pub receive_lag_seconds: Option<i64>,
@@ -11,7 +11,7 @@ pub struct ReplicationMetrics {
     pub collected_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ReplicationClient {
     pub application_name: String,
     pub client_addr: Option<String>,
@@ -20,21 +20,22 @@ pub struct ReplicationClient {
     pub relay_lsn: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PrimaryMetrics {
     pub replication_clients: Vec<ReplicationClient>,
     pub collected_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Serialize, PartialEq, Eq, Clone, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum HealthStatus {
+    #[default]
     Healthy,
     Warning,
     Critical,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MetricSnapshot {
     pub replication_metrics: ReplicationMetrics,
     pub primary_metrics: PrimaryMetrics,
