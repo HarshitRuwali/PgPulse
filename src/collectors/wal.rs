@@ -1,6 +1,6 @@
+use crate::models::{PrimaryMetrics, ReplicationClient};
 use chrono::Utc;
 use tokio_postgres::Client;
-use crate::models::{PrimaryMetrics, ReplicationClient};
 
 pub async fn collect_primary_metrics(client: &Client) -> anyhow::Result<PrimaryMetrics> {
     let result = client
