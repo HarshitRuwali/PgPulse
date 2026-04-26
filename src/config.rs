@@ -23,7 +23,7 @@ pub struct ServerConfig {
 }
 
 #[derive(Deserialize)]
-pub struct ThresholdsConfig {
+pub struct ThresholdConfig {
     pub replay_lag_warning_seconds: u64,
     pub replay_lag_critical_seconds: u64,
     pub lsn_gap_warning_bytes: u64,
@@ -36,7 +36,7 @@ pub struct Config {
     pub primary: DbConfig,
     pub replica: DbConfig,
     pub server: ServerConfig,
-    pub thresholds: ThresholdsConfig,
+    pub threshold: ThresholdConfig,
 }
 
 pub fn load_config(path: &str) -> anyhow::Result<Config> {

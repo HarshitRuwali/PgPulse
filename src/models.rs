@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 
 #[derive(Debug)]
 pub struct ReplicationMetrics {
-    pub relay_lag_seconds: Option<i64>,
+    pub replay_lag_seconds: Option<i64>,
     pub receive_lag_seconds: Option<i64>,
     pub replay_lsn: Option<String>,
     pub lsn_gap_bytes: Option<i64>,

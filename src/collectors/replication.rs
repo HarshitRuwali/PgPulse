@@ -15,7 +15,7 @@ pub async fn collect_replica_metrics(client: &Client) -> anyhow::Result<Replicat
     ).await?;
 
     Ok(ReplicationMetrics {
-        relay_lag_seconds: result.get("replay_lag_seconds"),
+        replay_lag_seconds: result.get("replay_lag_seconds"),
         receive_lag_seconds: result.get("receive_lag_seconds"),
         replay_lsn: result.get("replay_lsn"),
         lsn_gap_bytes: result.get("lsn_gap_bytes"),

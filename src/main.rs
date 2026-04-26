@@ -1,9 +1,11 @@
 mod collectors;
 mod config;
 mod db;
+mod health;
 mod models;
 use crate::collectors::{replication::collect_replica_metrics, wal::collect_primary_metrics};
 use clap::Parser;
+use health::evaluator::evaluate_health;
 use tokio;
 use tracing::info;
 use tracing_subscriber;
@@ -33,6 +35,10 @@ async fn main() -> anyhow::Result<()> {
     info!("Replication Metrics: {:?}", replia_metrics);
     let primary_metrics = collect_primary_metrics(&primary_client).await?;
     info!("Primary Metrics: {:?}", primary_metrics);
+
+    // check the health status between primary and replica
+    let health_status = evaluate_health(&replia_metrics, &config.threshold);
+    info!("Health Status: {:?}", health_status);
 
     Ok(())
 }
