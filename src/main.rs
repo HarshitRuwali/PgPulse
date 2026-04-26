@@ -1,3 +1,4 @@
+mod api;
 mod collectors;
 mod config;
 mod db;
@@ -39,6 +40,13 @@ async fn main() -> anyhow::Result<()> {
     // check the health status between primary and replica
     let health_status = evaluate_health(&replia_metrics, &config.threshold);
     info!("Health Status: {:?}", health_status);
+
+    let app = api::create_router();
+    let listener =
+        tokio::net::TcpListener::bind(format!("{}:{}", config.server.host, config.server.port))
+            .await
+            .unwrap();
+    axum::serve(listener, app).await.unwrap();
 
     Ok(())
 }
