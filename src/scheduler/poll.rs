@@ -50,7 +50,8 @@ pub async fn poll_and_update_snapshot(config: Config, metric_store: MetricStore)
                 }
             };
 
-            let health_status = evaluator::evaluate_health(&replica_metrics, &config.threshold);
+            let health_status =
+                evaluator::evaluate_health(&replica_metrics, &primary_metrics, &config.threshold);
 
             let snapshot = MetricSnapshot {
                 replication_metrics: replica_metrics,

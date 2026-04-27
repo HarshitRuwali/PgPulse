@@ -8,6 +8,7 @@ pub struct DbConfig {
     pub name: String,
     pub user: String,
     pub password: String,
+    pub ssl_enabled: bool,
 }
 
 #[derive(Deserialize, Clone)]

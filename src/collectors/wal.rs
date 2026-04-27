@@ -9,11 +9,18 @@ pub async fn collect_primary_metrics(client: &Client) -> anyhow::Result<PrimaryM
             application_name, 
             client_addr::text, 
             state, 
-            sync_state,
             sent_lsn::text,
             write_lsn::text,
             flush_lsn::text,
-            replay_lsn::text
+            replay_lsn::text,
+            EXTRACT(EPOCH FROM write_lag)::float8   AS write_lag_seconds,
+            EXTRACT(EPOCH FROM flush_lag)::float8   AS flush_lag_seconds,
+            EXTRACT(EPOCH FROM replay_lag)::float8  AS replay_lag_seconds,
+            -- For async replication replay_lsn is NULL; fall back to flush_lsn then write_lsn
+            pg_wal_lsn_diff(
+                pg_current_wal_lsn(),
+                COALESCE(replay_lsn, flush_lsn, write_lsn)
+            )::bigint AS lsn_gap_bytes
          FROM pg_stat_replication",
             &[],
         )
@@ -27,7 +34,13 @@ pub async fn collect_primary_metrics(client: &Client) -> anyhow::Result<PrimaryM
             client_addr: row.get("client_addr"),
             state: row.get("state"),
             sent_lsn: row.get("sent_lsn"),
-            relay_lsn: row.get("replay_lsn"),
+            write_lsn: row.get("write_lsn"),
+            flush_lsn: row.get("flush_lsn"),
+            replay_lsn: row.get("replay_lsn"),
+            write_lag_seconds: row.get("write_lag_seconds"),
+            flush_lag_seconds: row.get("flush_lag_seconds"),
+            replay_lag_seconds: row.get("replay_lag_seconds"),
+            lsn_gap_bytes: row.get("lsn_gap_bytes"),
         })
     }
 

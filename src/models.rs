@@ -17,7 +17,13 @@ pub struct ReplicationClient {
     pub client_addr: Option<String>,
     pub state: Option<String>,
     pub sent_lsn: Option<String>,
-    pub relay_lsn: Option<String>,
+    pub write_lsn: Option<String>,
+    pub flush_lsn: Option<String>,
+    pub replay_lsn: Option<String>,
+    pub write_lag_seconds: Option<f64>,
+    pub flush_lag_seconds: Option<f64>,
+    pub replay_lag_seconds: Option<f64>,
+    pub lsn_gap_bytes: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default)]

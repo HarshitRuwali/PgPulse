@@ -15,24 +15,30 @@ pub async fn replication_status_handler(State(snapshot): State<MetricStore>) -> 
     let snapshot = snapshot.read_snapshot().await;
     Json(json!({
         "status": snapshot.health_status,
-        "replication_data": {
+        "in_recovery": snapshot.replication_metrics.in_recovery,
+        "replica_metrics": {
             "replay_lag_seconds": snapshot.replication_metrics.replay_lag_seconds,
             "receive_lag_seconds": snapshot.replication_metrics.receive_lag_seconds,
             "replay_lsn": snapshot.replication_metrics.replay_lsn,
             "lsn_gap_bytes": snapshot.replication_metrics.lsn_gap_bytes,
-            "in_recovery": snapshot.replication_metrics.in_recovery,
             "collected_at": snapshot.replication_metrics.collected_at,
-            "replication_clients": snapshot.primary_metrics.replication_clients.iter().map(|client| {
-                json!({
-                    "application_name": client.application_name,
-                    "client_addr": client.client_addr,
-                    "state": client.state,
-                    "sent_lsn": client.sent_lsn,
-                    "relay_lsn": client.relay_lsn,
-                    "collected_at": snapshot.primary_metrics.collected_at
-                })
-            }).collect::<Vec<_>>(),
         },
+        "replication_clients": snapshot.primary_metrics.replication_clients.iter().map(|client| {
+            json!({
+                "application_name": client.application_name,
+                "client_addr": client.client_addr,
+                "state": client.state,
+                "sent_lsn": client.sent_lsn,
+                "write_lsn": client.write_lsn,
+                "flush_lsn": client.flush_lsn,
+                "replay_lsn": client.replay_lsn,
+                "write_lag_seconds": client.write_lag_seconds,
+                "flush_lag_seconds": client.flush_lag_seconds,
+                "replay_lag_seconds": client.replay_lag_seconds,
+                "lsn_gap_bytes": client.lsn_gap_bytes,
+                "collected_at": snapshot.primary_metrics.collected_at
+            })
+        }).collect::<Vec<_>>(),
         "collected_at": snapshot.collected_at
     }))
 }

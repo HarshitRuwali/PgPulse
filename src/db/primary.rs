@@ -10,8 +10,17 @@ pub async fn connect(config: &DbConfig) -> anyhow::Result<Client> {
     let connector = MakeTlsConnector::new(connector);
 
     let conn_str = format!(
-        "host={} port={} dbname={} user={} password={} sslmode=require",
-        config.host, config.port, config.name, config.user, config.password
+        "host={} port={} dbname={} user={} password={} sslmode={}",
+        config.host,
+        config.port,
+        config.name,
+        config.user,
+        config.password,
+        if config.ssl_enabled {
+            "require"
+        } else {
+            "disable"
+        }
     );
 
     let (client, connection) = tokio_postgres::connect(conn_str.as_str(), connector).await?;

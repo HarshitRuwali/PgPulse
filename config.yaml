@@ -8,13 +8,15 @@ primary:
   name: postgres
   user: pgpulse
   password: pgpulse
+  ssl_enabled: false
 
 replica:
   host: localhost
-  port: 5432
+  port: 5433
   name: postgres
   user: pgpulse
   password: pgpulse
+  ssl_enabled: false
 
 server:
   host: "0.0.0.0"
