@@ -25,7 +25,7 @@ pub async fn collect_primary_metrics(client: &Client) -> anyhow::Result<PrimaryM
         clients.push(ReplicationClient {
             application_name: row.get("application_name"),
             client_addr: row.get("client_addr"),
-            stage: row.get("state"),
+            state: row.get("state"),
             sent_lsn: row.get("sent_lsn"),
             relay_lsn: row.get("replay_lsn"),
         })

@@ -7,10 +7,25 @@ use crate::storage::in_memory::MetricStore;
 use std::time::Duration;
 use tokio;
 use tokio::time::interval;
+use tracing::error;
 
 pub async fn poll_and_update_snapshot(config: Config, metric_store: MetricStore) {
-    let primary_client = primary::connect(&config.primary).await.unwrap();
-    let replica_client = replica::connect(&config.replica).await.unwrap();
+    let primary_client = match primary::connect(&config.primary).await {
+        Ok(client) => client,
+        Err(e) => {
+            error!("Error connecting to primary daabase: {}", e);
+            return;
+        }
+    };
+
+    let replica_client = match replica::connect(&config.replica).await {
+        Ok(client) => client,
+        Err(e) => {
+            error!("Error connecting to replica database: {}", e);
+            return;
+        }
+    };
+
     let metric_store = metric_store.clone();
 
     tokio::spawn(async move {
@@ -19,12 +34,26 @@ pub async fn poll_and_update_snapshot(config: Config, metric_store: MetricStore)
         loop {
             ticker.tick().await;
 
-            let primary_metrics = collect_primary_metrics(&primary_client).await.unwrap();
-            let replia_metrics = collect_replica_metrics(&replica_client).await.unwrap();
-            let health_status = evaluator::evaluate_health(&replia_metrics, &config.threshold);
+            let primary_metrics = match collect_primary_metrics(&primary_client).await {
+                Ok(metrics) => metrics,
+                Err(e) => {
+                    error!("Failed to collect primary metrics: {}", e);
+                    continue;
+                }
+            };
+
+            let replica_metrics = match collect_replica_metrics(&replica_client).await {
+                Ok(metrics) => metrics,
+                Err(e) => {
+                    error!("Failed to collect replica metrics: {}", e);
+                    continue;
+                }
+            };
+
+            let health_status = evaluator::evaluate_health(&replica_metrics, &config.threshold);
 
             let snapshot = MetricSnapshot {
-                replication_metrics: replia_metrics,
+                replication_metrics: replica_metrics,
                 primary_metrics,
                 health_status,
                 collected_at: chrono::Utc::now(),

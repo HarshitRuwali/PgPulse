@@ -15,7 +15,7 @@ pub struct ReplicationMetrics {
 pub struct ReplicationClient {
     pub application_name: String,
     pub client_addr: Option<String>,
-    pub stage: String,
+    pub state: Option<String>,
     pub sent_lsn: Option<String>,
     pub relay_lsn: Option<String>,
 }

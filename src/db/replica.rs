@@ -1,13 +1,20 @@
 use crate::config::DbConfig;
-use tokio_postgres::{Client, NoTls};
+use native_tls::TlsConnector;
+use postgres_native_tls::MakeTlsConnector;
+use tokio_postgres::Client;
 
 pub async fn connect(config: &DbConfig) -> anyhow::Result<Client> {
+    let connector = TlsConnector::builder()
+        .danger_accept_invalid_certs(true)
+        .build()?;
+    let connector = MakeTlsConnector::new(connector);
+
     let conn_str = format!(
-        "host={} port={} dbname={} user={} password={}",
+        "host={} port={} dbname={} user={} password={} sslmode=require",
         config.host, config.port, config.name, config.user, config.password
     );
 
-    let (client, connection) = tokio_postgres::connect(conn_str.as_str(), NoTls).await?;
+    let (client, connection) = tokio_postgres::connect(conn_str.as_str(), connector).await?;
 
     tokio::spawn(async move {
         if let Err(e) = connection.await {

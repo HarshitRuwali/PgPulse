@@ -26,7 +26,7 @@ pub async fn replication_status_handler(State(snapshot): State<MetricStore>) -> 
                 json!({
                     "application_name": client.application_name,
                     "client_addr": client.client_addr,
-                    "stage": client.stage,
+                    "state": client.state,
                     "sent_lsn": client.sent_lsn,
                     "relay_lsn": client.relay_lsn,
                     "collected_at": snapshot.primary_metrics.collected_at

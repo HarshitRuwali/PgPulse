@@ -14,6 +14,7 @@ pub fn evaluate_health(replica: &ReplicationMetrics, threshold: &ThresholdConfig
             HealthStatus::Warning
         }
         Some(lag) if lag >= threshold.replay_lag_critical_seconds as i64 => HealthStatus::Critical,
+        None => HealthStatus::Critical, // If replay lag is missing, consider it critical
         _ => HealthStatus::Healthy,
     }
 }
