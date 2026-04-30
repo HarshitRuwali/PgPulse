@@ -39,6 +39,12 @@ pub async fn replication_status_handler(State(snapshot): State<MetricStore>) -> 
                 "collected_at": snapshot.primary_metrics.collected_at
             })
         }).collect::<Vec<_>>(),
+        "long_running_queries": snapshot.long_running_queries.iter().map(|query| {
+            json!({
+                "query": query.query,
+                "duration": query.duration,
+            })
+        }).collect::<Vec<_>>(),
         "collected_at": snapshot.collected_at
     }))
 }

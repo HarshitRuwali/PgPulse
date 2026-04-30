@@ -42,9 +42,16 @@ pub enum HealthStatus {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct LongRunningQueries {
+    pub query: String,
+    pub duration: f64,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct MetricSnapshot {
     pub replication_metrics: ReplicationMetrics,
     pub primary_metrics: PrimaryMetrics,
     pub health_status: HealthStatus,
     pub collected_at: DateTime<Utc>,
+    pub long_running_queries: Vec<LongRunningQueries>,
 }

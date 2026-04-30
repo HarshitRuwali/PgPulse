@@ -1,4 +1,8 @@
-use crate::collectors::{replication::collect_replica_metrics, wal::collect_primary_metrics};
+use crate::collectors::queries;
+use crate::collectors::{
+    queries::get_long_running_queries, replication::collect_replica_metrics,
+    wal::collect_primary_metrics,
+};
 use crate::config::Config;
 use crate::db::{primary, replica};
 use crate::health::evaluator;
@@ -53,10 +57,24 @@ pub async fn poll_and_update_snapshot(config: Config, metric_store: MetricStore)
             let health_status =
                 evaluator::evaluate_health(&replica_metrics, &primary_metrics, &config.threshold);
 
+            let long_queries = match get_long_running_queries(
+                &replica_client,
+                config.polling.long_query_threshold_seconds,
+            )
+            .await
+            {
+                Ok(queries) => queries,
+                Err(e) => {
+                    error!("Failred to collect long running queries: {}", e);
+                    continue;
+                }
+            };
+
             let snapshot = MetricSnapshot {
                 replication_metrics: replica_metrics,
                 primary_metrics,
                 health_status,
+                long_running_queries: long_queries,
                 collected_at: chrono::Utc::now(),
             };
             metric_store.update_snapshot(snapshot).await;
