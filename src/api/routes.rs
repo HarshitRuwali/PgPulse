@@ -1,5 +1,5 @@
-use crate::storage::in_memory::MetricStore;
-use axum::{Json, extract::State};
+use crate::storage::{in_memory::MetricStore, metrics};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde_json::{Value, json};
 use tracing::info;
 
@@ -47,4 +47,20 @@ pub async fn replication_status_handler(State(snapshot): State<MetricStore>) -> 
         }).collect::<Vec<_>>(),
         "collected_at": snapshot.collected_at
     }))
+}
+
+pub async fn metrics_handler() -> impl IntoResponse {
+    info!("Received request for replication metrics from Prometheus");
+    match metrics::gather_as_text() {
+        Ok(body) => (
+            StatusCode::OK,
+            body,
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({ "error": format!("failed to encode metrics: {}", e) }).to_string(),
+        )
+            .into_response(),
+    }
 }

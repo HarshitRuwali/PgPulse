@@ -1,4 +1,3 @@
-use crate::collectors::queries;
 use crate::collectors::{
     queries::get_long_running_queries, replication::collect_replica_metrics,
     wal::collect_primary_metrics,
@@ -7,7 +6,7 @@ use crate::config::Config;
 use crate::db::{primary, replica};
 use crate::health::evaluator;
 use crate::models::MetricSnapshot;
-use crate::storage::in_memory::MetricStore;
+use crate::storage::{in_memory::MetricStore, metrics::update_from_snapshot};
 use std::time::Duration;
 use tokio;
 use tokio::time::interval;
@@ -77,7 +76,8 @@ pub async fn poll_and_update_snapshot(config: Config, metric_store: MetricStore)
                 long_running_queries: long_queries,
                 collected_at: chrono::Utc::now(),
             };
-            metric_store.update_snapshot(snapshot).await;
+            metric_store.update_snapshot(snapshot.clone()).await;
+            update_from_snapshot(&snapshot);
         }
     });
 }
