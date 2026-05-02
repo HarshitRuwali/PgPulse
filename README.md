@@ -8,6 +8,11 @@ For local environment, spin up the postgres docker containers and Grafana enviro
 docker-compose up -d
 ```
 
+If you just want to run the grafana and prometheus, then you can use the following command:
+```bash
+docker-compose -f docker-compose-grafana.yml up -d
+```
+
 
 ## Configuration
 Update the file `config.yaml` file with the connection details of your primary and read replica.
@@ -19,7 +24,15 @@ Pass the config file as the cli argument:
 cargo run -- --config config.yaml
 ```
 
-## Demo Dashboard
+*Note*: If you are are not using the Local setup via docker-compose, then expose the endpoint `http://localhost:8080/metrics` as a data source in Grafana to visualize the replication lag and other metrics. (It is already added in the `prometheus.yml` file for local setup)
+
+
+## Demo
+
+### Metrics Endpoint
+![Metrics Endpoint](./assets/Screenshot_2026-05-01-1.png)
+
+### Grafana Dashboard
 ![Grafana Dashboard](./assets/Screenshot_2026-05-01.png)
 
 ## References:

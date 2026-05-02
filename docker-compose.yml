@@ -44,8 +44,6 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
-    depends_on:
-      - master_db
     
   prometheus:
     image: prom/prometheus:latest
@@ -54,7 +52,7 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     depends_on:
-      - master_db
+      - grafana
 
 volumes:
   master_db_data:
