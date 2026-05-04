@@ -10,9 +10,7 @@ mod storage;
 use crate::storage::in_memory::MetricStore;
 use clap::Parser;
 use scheduler::poll::poll_and_update_snapshot;
-use tokio;
 use tracing::info;
-use tracing_subscriber;
 
 #[derive(Parser)]
 struct Cli {
