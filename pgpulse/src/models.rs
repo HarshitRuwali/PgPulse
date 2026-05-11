@@ -1,3 +1,4 @@
+use pgrx::prelude::*;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
@@ -32,7 +33,7 @@ pub struct PrimaryMetrics {
     pub collected_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq, Clone, Default)]
+#[derive(Debug, Serialize, PartialEq, Eq, Clone, Default, PostgresEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum HealthStatus {
     #[default]
