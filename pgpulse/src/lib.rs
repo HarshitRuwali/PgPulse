@@ -1,5 +1,7 @@
+mod collectors;
 mod guc;
-
+mod health;
+mod models;
 use pgrx::prelude::*;
 
 ::pgrx::pg_module_magic!(name, version);
@@ -18,14 +20,13 @@ mod tests {
     fn test_hello_pgpulse() {
         assert_eq!("Hello, pgpulse", crate::hello_pgpulse());
     }
-
 }
 
 #[cfg(feature = "pg_bench")]
 #[pg_schema]
 mod benches {
     use pgrx::prelude::*;
-    use pgrx_bench::{Bencher, black_box};
+    use pgrx_bench::{black_box, Bencher};
 
     #[pg_bench]
     fn bench_hello_pgpulse(b: &mut Bencher) {

@@ -1,5 +1,5 @@
-use pgrx::prelude::*;
 use chrono::{DateTime, Utc};
+use pgrx::prelude::*;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Default)]

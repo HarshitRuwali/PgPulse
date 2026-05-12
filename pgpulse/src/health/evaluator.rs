@@ -1,11 +1,14 @@
-use crate::config::ThresholdConfig;
+// use crate::config::ThresholdConfig;
+use crate::guc;
 use crate::models::{HealthStatus, PrimaryMetrics, ReplicationMetrics};
 
-pub fn evaluate_health(
-    replica: &ReplicationMetrics,
-    primary: &PrimaryMetrics,
-    threshold: &ThresholdConfig,
-) -> HealthStatus {
+pub fn evaluate_health(replica: &ReplicationMetrics, primary: &PrimaryMetrics) -> HealthStatus {
+    // threshold config now will be read from the GUC's instead of the config
+    let replay_lag_critical_seconds = guc::REPLAY_LAG_CRITICAL_SECONDS.get();
+    let replay_lag_warning_seconds = guc::REPLAY_LAG_WARNING_SECONDS.get();
+    let lsn_gap_critical_bytes = guc::LSN_GAP_CRITICAL_BYTES.get();
+    let lsn_gap_warning_bytes = guc::LSN_GAP_WARNING_BYTES.get();
+
     // Primary node: replica-side lag functions may not be meaningful, so evaluate via pg_stat_replication.
     if !replica.in_recovery {
         if primary.replication_clients.is_empty() {
@@ -14,21 +17,15 @@ pub fn evaluate_health(
         let mut worst_health: HealthStatus = HealthStatus::Healthy;
         for client in &primary.replication_clients {
             let lag_status = match client.replay_lag_seconds {
-                Some(lag) if lag >= threshold.replay_lag_critical_seconds as f64 => {
-                    HealthStatus::Critical
-                }
-                Some(lag) if lag >= threshold.replay_lag_warning_seconds as f64 => {
-                    HealthStatus::Warning
-                }
+                Some(lag) if lag >= replay_lag_critical_seconds as f64 => HealthStatus::Critical,
+                Some(lag) if lag >= replay_lag_warning_seconds as f64 => HealthStatus::Warning,
                 // NULL lag = async replication, rely on lsn_gap_bytes instead
                 _ => HealthStatus::Healthy,
             };
 
             let gap_status = match client.lsn_gap_bytes {
-                Some(gap) if gap >= threshold.lsn_gap_critical_bytes as i64 => {
-                    HealthStatus::Critical
-                }
-                Some(gap) if gap >= threshold.lsn_gap_warning_bytes as i64 => HealthStatus::Warning,
+                Some(gap) if gap >= lsn_gap_critical_bytes as i64 => HealthStatus::Critical,
+                Some(gap) if gap >= lsn_gap_warning_bytes as i64 => HealthStatus::Warning,
                 _ => HealthStatus::Healthy,
             };
 
@@ -59,13 +56,10 @@ pub fn evaluate_health(
     // LSN gap is more reliable for detecting replication stalls,
     // especially for async replicas where replay lag is NULL
     match replica.lsn_gap_bytes {
-        Some(gap)
-            if gap >= threshold.lsn_gap_warning_bytes as i64
-                && gap < threshold.lsn_gap_critical_bytes as i64 =>
-        {
+        Some(gap) if gap >= lsn_gap_warning_bytes as i64 && gap < lsn_gap_critical_bytes as i64 => {
             HealthStatus::Warning
         }
-        Some(gap) if gap >= threshold.lsn_gap_critical_bytes as i64 => HealthStatus::Critical,
+        Some(gap) if gap >= lsn_gap_critical_bytes as i64 => HealthStatus::Critical,
         None => HealthStatus::Critical, // Replica is in recovery but has no LSN gap info — likely stalled
         _ => HealthStatus::Healthy,
     }
@@ -87,40 +81,34 @@ mod tests {
 
     #[test]
     fn test_healthy_evaluate_health() {
-        let config = crate::config::load_config("config.yaml").expect("Failed to load config");
-        let threshold = config.threshold;
         let replica_metrics = ReplicationMetrics {
             replay_lag_seconds: Some(5),
             receive_lag_seconds: None,
             replay_lsn: None,
-            lsn_gap_bytes: None,
+            lsn_gap_bytes: Some(1024),
             in_recovery: true,
             collected_at: chrono::Utc::now(),
         };
-        let health_status = evaluate_health(&replica_metrics, &make_primary_metrics(0), &threshold);
+        let health_status = evaluate_health(&replica_metrics, &make_primary_metrics(0));
         assert_eq!(health_status, HealthStatus::Healthy);
     }
 
     #[test]
     fn test_warning_evaluate_health() {
-        let config = crate::config::load_config("config.yaml").expect("Failed to load config");
-        let threshold = config.threshold;
         let replica_metrics = ReplicationMetrics {
             replay_lag_seconds: Some(15),
             receive_lag_seconds: None,
             replay_lsn: None,
-            lsn_gap_bytes: None,
+            lsn_gap_bytes: Some(10 * 1024 * 1024), // 10 MB
             in_recovery: true,
             collected_at: chrono::Utc::now(),
         };
-        let health_status = evaluate_health(&replica_metrics, &make_primary_metrics(0), &threshold);
+        let health_status = evaluate_health(&replica_metrics, &make_primary_metrics(0));
         assert_eq!(health_status, HealthStatus::Warning);
     }
 
     #[test]
     fn test_critical_evaluate_health() {
-        let config = crate::config::load_config("config.yaml").expect("Failed to load config");
-        let threshold = config.threshold;
         let replica_metrics = ReplicationMetrics {
             replay_lag_seconds: Some(65),
             receive_lag_seconds: None,
@@ -129,7 +117,7 @@ mod tests {
             in_recovery: true,
             collected_at: chrono::Utc::now(),
         };
-        let health_status = evaluate_health(&replica_metrics, &make_primary_metrics(0), &threshold);
+        let health_status = evaluate_health(&replica_metrics, &make_primary_metrics(0));
         assert_eq!(health_status, HealthStatus::Critical);
     }
 }

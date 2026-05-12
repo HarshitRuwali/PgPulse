@@ -10,3 +10,6 @@ And there is a this maintainer of pgx/pgrx streaming a few vids about it on twit
 https://docs.rs/pgx/latest/pgx/guc/enum.GucContext.html
 
 Rest I am relying on the source code of pgrx to figure out what and how to do things.
+
+another ref: https://archive.fosdem.org/2025/events/attachments/fosdem-2025-4317-writing-safe-postgresql-extensions-in-rust-a-practical-guide/slides/238202/writing_p_EGMYZay.pdf
+
