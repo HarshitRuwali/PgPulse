@@ -1,3 +1,4 @@
+mod bgw;
 mod collectors;
 mod guc;
 mod health;

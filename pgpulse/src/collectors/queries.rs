@@ -6,7 +6,7 @@ use pgrx::{
 
 use crate::{guc, models::LongRunningQueries};
 
-pub async fn get_long_running_queries() -> Result<Vec<LongRunningQueries>, SpiError> {
+pub fn get_long_running_queries() -> Result<Vec<LongRunningQueries>, SpiError> {
     let threshold = guc::LONG_RUNNING_QUERY_WARNING_SECONDS.get() as f64;
     let query = "
         SELECT pid,

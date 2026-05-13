@@ -3,7 +3,7 @@ use crate::models::{PrimaryMetrics, ReplicationClient};
 use chrono::Utc;
 use postgres::{Client, NoTls};
 
-pub async fn collect_primary_metrics() -> anyhow::Result<PrimaryMetrics> {
+pub fn collect_primary_metrics() -> anyhow::Result<PrimaryMetrics> {
     let query = "SELECT 
             application_name, 
             client_addr::text, 

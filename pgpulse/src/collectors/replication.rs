@@ -3,7 +3,7 @@ use chrono::Utc;
 use pgrx::spi::{Spi, SpiError, SpiTupleTable};
 /// Use spi instead of tokio_postgres to query the replica metrics from within the PostgreSQL extension
 
-pub async fn collect_replica_metrics() -> Result<ReplicationMetrics, SpiError> {
+pub fn collect_replica_metrics() -> Result<ReplicationMetrics, SpiError> {
     let query = "
         SELECT
         EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp()))::BIGINT AS replay_lag_seconds,
