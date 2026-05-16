@@ -6,8 +6,7 @@ use pgrx::bgworkers::{BackgroundWorker, BackgroundWorkerBuilder, SignalWakeFlags
 use pgrx::prelude::*;
 use std::time::Duration;
 
-#[pg_guard]
-pub extern "C-unwind" fn _PG_init() {
+pub fn init() {
     BackgroundWorkerBuilder::new("postgres monitoring worker")
         .set_function("pgpulse__worker_main")
         .set_library("pgpulse")
@@ -54,7 +53,7 @@ pub extern "C-unwind" fn pgpulse__worker_main(_arg: pg_sys::Datum) {
         // collect metrics and store in shared memory which will be read by the exporter
 
         match collect_and_store_metrics() {
-            Ok(snapshot) => {} // write the snapshot to shared memory which will be read by the exporter
+            Ok(_snapshot) => {} // write the snapshot to shared memory which will be read by the exporter
             Err(e) => {
                 // Log the error but keep the worker running
                 warning!("Error collecting/storing metrics: {:?}", e);

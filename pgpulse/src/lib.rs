@@ -3,9 +3,17 @@ mod collectors;
 mod guc;
 mod health;
 mod models;
+mod shared_mem;
 use pgrx::prelude::*;
 
 ::pgrx::pg_module_magic!(name, version);
+
+#[pg_guard]
+pub extern "C-unwind" fn _PG_init() {
+    guc::init();
+    shared_mem::init();
+    bgw::init();
+}
 
 #[pg_extern]
 fn hello_pgpulse() -> &'static str {

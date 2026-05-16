@@ -52,7 +52,7 @@ pub fn collect_primary_metrics() -> anyhow::Result<PrimaryMetrics> {
         .to_string();
     let ssl_mode = guc::PEER_SSL_MODE.get();
 
-    let tls_mode = if ssl_mode {
+    let _tls_mode = if ssl_mode {
         postgres::config::SslMode::Require
     } else {
         postgres::config::SslMode::Disable
@@ -89,11 +89,10 @@ pub fn collect_primary_metrics() -> anyhow::Result<PrimaryMetrics> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::executor::block_on;
 
     #[test]
     fn test_collect_primary_metrics_requires_peer_host_guc() {
-        let err = block_on(collect_primary_metrics()).expect_err("expected missing GUC error");
+        let err = collect_primary_metrics().expect_err("expected missing GUC error");
         assert!(err.to_string().contains("pgpulse.host is not configured"));
     }
 }

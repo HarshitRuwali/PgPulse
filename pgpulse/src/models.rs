@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use pgrx::prelude::*;
+
 use serde::Serialize;
 
 #[derive(Debug, Clone, Default)]
@@ -56,3 +57,7 @@ pub struct MetricSnapshot {
     pub collected_at: DateTime<Utc>,
     pub long_running_queries: Vec<LongRunningQueries>,
 }
+
+// SAFETY: MetricSnapshot is only accessed via PgLwLock which provides
+// exclusive locking. All fields must remain in the shared memory segment.
+unsafe impl pgrx::PGRXSharedMemory for MetricSnapshot {}
