@@ -31,6 +31,54 @@ mod tests {
     }
 }
 
+/// Return the current replication status
+#[pg_extern]
+fn pgpulse_replication_status() -> TableIterator<
+    'static,
+    (
+        name!(replica_name, String),
+        name!(state, Option<String>),
+        name!(replay_lag_seconds, Option<f64>),
+        name!(lsn_gap_bytes, Option<i64>),
+    ),
+> {
+    let snapshot = shared_mem::read_snapshot();
+    let mut rows = Vec::new();
+
+    for replica in snapshot.primary_metrics.replication_clients {
+        rows.push((
+            replica.application_name,
+            replica.state,
+            replica.replay_lag_seconds,
+            replica.lsn_gap_bytes,
+        ));
+    }
+
+    TableIterator::new(rows)
+}
+
+/// Return the health status
+#[pg_extern]
+fn pgpulse_health_status() -> String {
+    let snapshot = shared_mem::read_snapshot();
+    let health_status = format!("{:?}", snapshot.health_status);
+    health_status
+}
+
+/// Return the long running queries
+#[pg_extern]
+fn pgpulse_long_running_queries(
+) -> TableIterator<'static, (name!(query, String), name!(duration, f64))> {
+    let snapshot = shared_mem::read_snapshot();
+    let mut rows = Vec::new();
+
+    for query in snapshot.long_running_queries {
+        rows.push((query.query, query.duration));
+    }
+
+    TableIterator::new(rows)
+}
+
 #[cfg(feature = "pg_bench")]
 #[pg_schema]
 mod benches {

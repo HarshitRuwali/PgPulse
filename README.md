@@ -40,3 +40,4 @@ cargo run -- --config config.yaml
  - [Practical PostgreSQL Logical Replication: Setting Up an Experimentation Environment Using Docker](https://dev.to/ietxaniz/practical-postgresql-logical-replication-setting-up-an-experimentation-environment-using-docker-4h50)
 - [Monitoring a Rust Web Application Using Prometheus and Grafana](https://medium.com/better-programming/monitoring-a-rust-web-application-using-prometheus-and-grafana-3c75d9435dec)
 - [Rust Updates 2025 E4: LazyCell and LazyLock Deep Dive](https://medium.com/@md.abir1203/rust-updates-2025-e4-lazycell-and-lazylock-deep-dive-5622f3bac38e)
+- [How to Build PostgreSQL Custom Background Workers](https://oneuptime.com/blog/post/2026-01-30-postgresql-background-workers/view) - The best blog I went through so far about how postgreSQL extension work internally, its using C for examples, but the concepts are the same for Rust as well.
