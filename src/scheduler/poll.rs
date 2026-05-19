@@ -1,6 +1,6 @@
 use crate::collectors::{
-    queries::get_long_running_queries, replication::collect_replica_metrics,
-    wal::collect_primary_metrics,
+    queries::get_long_running_queries, replication::collect_local_metrics,
+    wal::collect_remote_metrics,
 };
 use crate::config::Config;
 use crate::db::{primary, replica};
@@ -37,7 +37,7 @@ pub async fn poll_and_update_snapshot(config: Config, metric_store: MetricStore)
         loop {
             ticker.tick().await;
 
-            let primary_metrics = match collect_primary_metrics(&primary_client).await {
+            let primary_metrics = match collect_remote_metrics(&primary_client).await {
                 Ok(metrics) => metrics,
                 Err(e) => {
                     error!("Failed to collect primary metrics: {}", e);

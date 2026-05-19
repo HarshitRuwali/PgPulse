@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use heapless;
 use pgrx::prelude::*;
 
 use serde::Serialize;
@@ -7,21 +7,20 @@ use serde::Serialize;
 pub struct ReplicationMetrics {
     pub replay_lag_seconds: Option<i64>,
     pub receive_lag_seconds: Option<i64>,
-    pub replay_lsn: Option<String>,
+    pub replay_lsn: Option<heapless::String<32>>,
     pub lsn_gap_bytes: Option<i64>,
     pub in_recovery: bool,
-    pub collected_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct ReplicationClient {
-    pub application_name: String,
-    pub client_addr: Option<String>,
-    pub state: Option<String>,
-    pub sent_lsn: Option<String>,
-    pub write_lsn: Option<String>,
-    pub flush_lsn: Option<String>,
-    pub replay_lsn: Option<String>,
+    pub application_name: heapless::String<64>,
+    pub client_addr: Option<heapless::String<64>>,
+    pub state: Option<heapless::String<32>>,
+    pub sent_lsn: Option<heapless::String<32>>,
+    pub write_lsn: Option<heapless::String<32>>,
+    pub flush_lsn: Option<heapless::String<32>>,
+    pub replay_lsn: Option<heapless::String<32>>,
     pub write_lag_seconds: Option<f64>,
     pub flush_lag_seconds: Option<f64>,
     pub replay_lag_seconds: Option<f64>,
@@ -31,7 +30,6 @@ pub struct ReplicationClient {
 #[derive(Debug, Clone, Default)]
 pub struct PrimaryMetrics {
     pub replication_clients: Vec<ReplicationClient>,
-    pub collected_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq, Clone, Default, PostgresEnum)]
@@ -44,18 +42,19 @@ pub enum HealthStatus {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct LongRunningQueries {
-    pub query: String,
+pub struct LongRunningQuery {
+    pub query: heapless::String<256>,
     pub duration: f64,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct MetricSnapshot {
-    pub replication_metrics: ReplicationMetrics,
-    pub primary_metrics: PrimaryMetrics,
+    // pub replication_metrics: ReplicationMetrics,
+    pub replication_clients: heapless::Vec<ReplicationClient, 16>,
     pub health_status: HealthStatus,
-    pub collected_at: DateTime<Utc>,
-    pub long_running_queries: Vec<LongRunningQueries>,
+    pub collected_at: i64, // Unix timestamp
+    pub long_running_queries: heapless::Vec<LongRunningQuery, 16>,
+    pub replica_replay_lag_seconds: Option<f64>,
 }
 
 // SAFETY: MetricSnapshot is only accessed via PgLwLock which provides

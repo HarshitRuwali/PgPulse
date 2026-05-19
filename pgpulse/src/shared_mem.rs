@@ -9,11 +9,11 @@ pub fn init() {
 }
 
 pub fn write_snapshot(snapshot: MetricSnapshot) {
-    let mut gaurd = PGPULSE_METRICS.exclusive();
-    *gaurd = snapshot;
+    let mut guard = PGPULSE_METRICS.exclusive();
+    *guard = snapshot;
 }
 
 pub fn read_snapshot() -> MetricSnapshot {
-    let gaurd = PGPULSE_METRICS.share();
-    gaurd.clone()
+    let guard = PGPULSE_METRICS.share();
+    guard.clone()
 }

@@ -6,7 +6,7 @@ mod models;
 mod shared_mem;
 use pgrx::prelude::*;
 
-::pgrx::pg_module_magic!(name, version);
+::pgrx::pg_module_magic!();
 
 #[pg_guard]
 pub extern "C-unwind" fn _PG_init() {
@@ -36,21 +36,29 @@ mod tests {
 fn pgpulse_replication_status() -> TableIterator<
     'static,
     (
-        name!(replica_name, String),
-        name!(state, Option<String>),
-        name!(replay_lag_seconds, Option<f64>),
+        name!(application_name, String),
+        name!(state, String),
         name!(lsn_gap_bytes, Option<i64>),
+        name!(replay_lag_seconds, Option<f64>), // sync only, NULL for async
+        name!(replica_replay_lag_seconds, Option<f64>), // from replica libpq
     ),
 > {
     let snapshot = shared_mem::read_snapshot();
+    let replica_lag = snapshot.replica_replay_lag_seconds;
     let mut rows = Vec::new();
 
-    for replica in snapshot.primary_metrics.replication_clients {
+    for client in &snapshot.replication_clients {
         rows.push((
-            replica.application_name,
-            replica.state,
-            replica.replay_lag_seconds,
-            replica.lsn_gap_bytes,
+            client.application_name.to_string(),
+            client
+                .state
+                .as_ref()
+                .map(|s| s.as_str())
+                .unwrap_or("")
+                .to_string(),
+            client.lsn_gap_bytes,
+            client.replay_lag_seconds,
+            replica_lag,
         ));
     }
 
@@ -68,15 +76,21 @@ fn pgpulse_health_status() -> String {
 /// Return the long running queries
 #[pg_extern]
 fn pgpulse_long_running_queries(
-) -> TableIterator<'static, (name!(query, String), name!(duration, f64))> {
+) -> TableIterator<'static, (name!(query, String), name!(duration_seconds, f64))> {
     let snapshot = shared_mem::read_snapshot();
     let mut rows = Vec::new();
 
-    for query in snapshot.long_running_queries {
-        rows.push((query.query, query.duration));
+    for query in &snapshot.long_running_queries {
+        rows.push((query.query.to_string(), query.duration));
     }
 
     TableIterator::new(rows)
+}
+
+/// Return the timestamp of the last collected snapshot
+#[pg_extern]
+fn pgpulse_collected_at() -> i64 {
+    shared_mem::read_snapshot().collected_at
 }
 
 #[cfg(feature = "pg_bench")]
