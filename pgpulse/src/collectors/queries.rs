@@ -16,7 +16,7 @@ pub fn get_long_running_queries(// ) -> Result<HVec<LongRunningQuery,>, SpiError
         FROM pg_stat_activity
         WHERE state != 'idle'
           AND query_start IS NOT NULL
-          AND now() - query_start > make_interval(secs => $1)
+          AND EXTRACT(EPOCH FROM (now() - query_start)) > $1
         ORDER BY duration DESC";
 
     Spi::connect(|client| {

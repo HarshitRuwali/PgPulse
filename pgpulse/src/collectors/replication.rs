@@ -3,7 +3,7 @@ use crate::guc;
 use crate::models::ReplicationClient;
 use heapless;
 use pgrx::spi::{Spi, SpiError};
-use postgres::{Client, NoTls};
+// use postgres::{Client, NoTls};
 /// Use spi instead of tokio_postgres to query the replica metrics from within the PostgreSQL extension
 
 pub fn collect_replication_clients(
@@ -90,23 +90,26 @@ pub fn collect_replica_time_lag() -> Option<f64> {
     } else {
         "disable"
     };
+    // Cant use postgres crate in BGW as it spawns its own threads and postgres crate is not designed to be used in a BGW
+    // TODO: use dblink or libpq to connect to the replica and run the query to get the replay lag
 
-    let conn_str = format!(
-        "host={host} port={port} dbname={dbname} user={user} \
-         password={password} sslmode={ssl}"
-    );
+    // let conn_str = format!(
+    //     "host={host} port={port} dbname={dbname} user={user} \
+    //      password={password} sslmode={ssl}"
+    // );
 
-    let mut client = Client::connect(&conn_str, NoTls).ok()?;
-    let row = client
-        .query_one(
-            "SELECT EXTRACT(EPOCH FROM \
-             (now() - pg_last_xact_replay_timestamp()))::float8 \
-             AS replay_lag_seconds",
-            &[],
-        )
-        .ok()?;
+    // let mut client = Client::connect(&conn_str, NoTls).ok()?;
+    // let row = client
+    //     .query_one(
+    //         "SELECT EXTRACT(EPOCH FROM \
+    //          (now() - pg_last_xact_replay_timestamp()))::float8 \
+    //          AS replay_lag_seconds",
+    //         &[],
+    //     )
+    //     .ok()?;
 
-    row.get("replay_lag_seconds")
+    // row.get("replay_lag_seconds")
+    None
 }
 
 #[cfg(test)]

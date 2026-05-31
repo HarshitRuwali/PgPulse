@@ -12,7 +12,17 @@ use pgrx::prelude::*;
 pub extern "C-unwind" fn _PG_init() {
     guc::init();
     shared_mem::init();
-    bgw::init();
+    // RegisterDynamicBackgroundWorker must only be called from the postmaster.
+    // When PostgreSQL forks a BGW it reloads the .so and calls _PG_init again;
+    // registering a second BGW from inside an already-running worker is invalid.
+    // `MyBgworkerEntry` is non-NULL inside every forked BGW process and NULL elsewhere.
+    extern "C" {
+        static MyBgworkerEntry: *const pgrx::pg_sys::BackgroundWorker;
+    }
+    let in_bgw = !unsafe { MyBgworkerEntry }.is_null();
+    if !in_bgw {
+        bgw::init();
+    }
 }
 
 #[pg_extern]
