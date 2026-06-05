@@ -64,7 +64,10 @@ pub extern "C-unwind" fn pgpulse_worker_main(_arg: pg_sys::Datum) {
         }
 
         let interval = Duration::from_secs(guc::POLL_INTERVAL_SECONDS.get() as u64);
-        warning!("pgpulse: waiting for latch ({} seconds)", guc::POLL_INTERVAL_SECONDS.get());
+        warning!(
+            "pgpulse: waiting for latch ({} seconds)",
+            guc::POLL_INTERVAL_SECONDS.get()
+        );
         let alive = BackgroundWorker::wait_latch(Some(interval));
         warning!("pgpulse: latch returned alive={}", alive);
 

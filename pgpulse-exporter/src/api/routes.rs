@@ -14,7 +14,6 @@ pub async fn health_handler() -> Json<Value> {
 
 pub async fn replication_status_handler(
     State((_, client)): State<(Arc<metrics::Metrics>, Arc<Client>)>,
-
 ) -> impl IntoResponse {
     let query = "SELECT * FROM pgpulse.replication_status";
 
@@ -101,7 +100,7 @@ pub async fn metrics_handler(
                 .set(code);
         }
         Err(e) => {
-            eprintln!("Failed to query health status: {}", e);
+            tracing::error!("Failed to query health status: {}", e);
             metrics.health_status.with_label_values(&["primary"]).set(2); // Critical if we can't determine health
         }
     }

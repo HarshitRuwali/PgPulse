@@ -9,8 +9,11 @@ pub fn create_router(
     client: Arc<tokio_postgres::Client>,
 ) -> Router {
     Router::new()
-        .route("/health",get(routes::health_handler))
-        .route("/metrics",get(routes::metrics_handler))
-        .route("/replication_status",get(routes::replication_status_handler))
+        .route("/health", get(routes::health_handler))
+        .route("/metrics", get(routes::metrics_handler))
+        .route(
+            "/replication_status",
+            get(routes::replication_status_handler),
+        )
         .with_state((metrics, client))
 }

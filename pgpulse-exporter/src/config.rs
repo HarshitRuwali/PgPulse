@@ -17,7 +17,6 @@ pub struct ServerConfig {
     pub port: u16,
 }
 
-
 #[derive(Deserialize, Clone)]
 pub struct Config {
     pub primary: DbConfig,
