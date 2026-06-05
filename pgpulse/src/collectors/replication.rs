@@ -3,6 +3,12 @@ use crate::guc;
 use crate::models::ReplicationClient;
 use heapless;
 use pgrx::spi::{Spi, SpiError};
+use pq_sys::{
+    ConnStatusType, ExecStatusType, PGconn, PQclear, PQconnectdb, PQerrorMessage, PQexec, PQfinish,
+    PQgetvalue, PQnfields, PQntuples, PQresultStatus, PQstatus,
+};
+use std::ffi::{CStr, CString};
+
 // use postgres::{Client, NoTls};
 /// Use spi instead of tokio_postgres to query the replica metrics from within the PostgreSQL extension
 
@@ -91,25 +97,48 @@ pub fn collect_replica_time_lag() -> Option<f64> {
         "disable"
     };
     // Cant use postgres crate in BGW as it spawns its own threads and postgres crate is not designed to be used in a BGW
-    // TODO: use dblink or libpq to connect to the replica and run the query to get the replay lag
+    // use dblink or libpq to connect to the replica and run the query to get the replay lag
 
-    // let conn_str = format!(
-    //     "host={host} port={port} dbname={dbname} user={user} \
-    //      password={password} sslmode={ssl}"
-    // );
+    let conn_str = CString::new(format!(
+        "host={} port={} dbname={} user={} password={} sslmode={}",
+        host, port, dbname, user, password, ssl
+    ))
+    .expect("Failed to create CString");
 
-    // let mut client = Client::connect(&conn_str, NoTls).ok()?;
-    // let row = client
-    //     .query_one(
-    //         "SELECT EXTRACT(EPOCH FROM \
-    //          (now() - pg_last_xact_replay_timestamp()))::float8 \
-    //          AS replay_lag_seconds",
-    //         &[],
-    //     )
-    //     .ok()?;
+    unsafe {
+        let conn: *mut PGconn = PQconnectdb(conn_str.as_ptr());
+        // Verify connection safety status
+        if PQstatus(conn) != ConnStatusType::CONNECTION_OK {
+            let err_ptr = PQerrorMessage(conn);
+            let err_message = CStr::from_ptr(err_ptr).to_string_lossy();
+            eprintln!("Connection failed: {}", err_message);
 
-    // row.get("replay_lag_seconds")
-    None
+            PQfinish(conn);
+            return None;
+        }
+        println!("Connected successfully to PostgreSQL via raw libpq!");
+
+        let query = c"SELECT EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp()))::float8 AS replay_lag_seconds";
+
+        let result = PQexec(conn, query.as_ptr());
+
+        let replay_lag_seconds = if PQresultStatus(result) == ExecStatusType::PGRES_TUPLES_OK
+            && PQntuples(result) > 0
+            && PQnfields(result) > 0
+        {
+            let val_ptr: *mut i8 = PQgetvalue(result, 0, 0);
+            CStr::from_ptr(val_ptr)
+                .to_str()
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
+        } else {
+            None
+        };
+
+        PQclear(result);
+        PQfinish(conn);
+        return replay_lag_seconds;
+    }
 }
 
 #[cfg(test)]
