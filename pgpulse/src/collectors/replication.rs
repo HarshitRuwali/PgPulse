@@ -13,8 +13,10 @@ use std::ffi::{CStr, CString};
 // use postgres::{Client, NoTls};
 /// Use spi instead of tokio_postgres to query the replica metrics from within the PostgreSQL extension
 
+static MAX_REPLICATION_CLIENTS: usize = 16;
+
 pub fn collect_replication_clients(
-) -> Result<(heapless::Vec<ReplicationClient, 16>, usize), SpiError> {
+) -> Result<(heapless::Vec<ReplicationClient, MAX_REPLICATION_CLIENTS>, usize), SpiError> {
     let query = "
         SELECT
             application_name,
@@ -36,7 +38,7 @@ pub fn collect_replication_clients(
     Spi::connect(|client| {
         let rows = client.select(query, None, &[])?;
         // let mut clients = [ReplicationClient::default(); MAX_REPLICATION_CLIENTS];
-        let mut clients = heapless::Vec::new();
+        let mut clients = heapless::Vec::<ReplicationClient, MAX_REPLICATION_CLIENTS>::new();
         let mut count = 0;
 
         for row in rows {
@@ -48,7 +50,7 @@ pub fn collect_replication_clients(
             let flush: Option<String> = row.get_by_name("flush_lsn")?;
             let replay: Option<String> = row.get_by_name("replay_lsn")?;
 
-            clients[count] = ReplicationClient {
+            let replica_client = ReplicationClient {
                 application_name: heapless::String::<64>::try_from(app.as_deref().unwrap_or(""))
                     .unwrap_or_default(),
                 client_addr: Some(
@@ -80,6 +82,7 @@ pub fn collect_replication_clients(
                 replay_lag_seconds: row.get_by_name("replay_lag_seconds")?,
                 lsn_gap_bytes: row.get_by_name("lsn_gap_bytes")?,
             };
+            clients.push(replica_client).ok();
             count += 1;
         }
         Ok((clients, count))
