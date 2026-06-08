@@ -15,14 +15,16 @@ pub async fn health_handler() -> Json<Value> {
 pub async fn replication_status_handler(
     State((_, client)): State<(Arc<metrics::Metrics>, Arc<Client>)>,
 ) -> impl IntoResponse {
-    let query = "SELECT * FROM pgpulse.replication_status";
+    let query = "SELECT * FROM pgpulse.replication_status;";
+    tracing::info!("Executing replication status query: {}", query);
 
     let rows = match client.query(query, &[]).await {
         Ok(rows) => rows,
         Err(e) => {
+            tracing::error!("Failed to query replication status: {:?}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": format!("failed to query replication status: {}", e) })),
+                Json(json!({ "error": format!("failed to query replication status: {} (code: {:?})", e, e.code()) })),
             )
                 .into_response();
         }
@@ -31,16 +33,18 @@ pub async fn replication_status_handler(
     let mut result = Vec::new();
 
     for row in rows {
-        let replica_name: String = row.get("replica_name");
+        let application_name: String = row.get("application_name");
+        let state: String = row.get("state");
         let replay_lag_seconds: Option<f64> = row.get("replay_lag_seconds");
         let lsn_gap_bytes: Option<i64> = row.get("lsn_gap_bytes");
-        let health_status: i32 = row.get("health_status");
+        let replica_replay_lag_seconds: Option<f64> = row.get("replica_replay_lag_seconds");
 
         result.push(json!({
-            "replica_name": replica_name,
+            "application_name": application_name,
             "replay_lag_seconds": replay_lag_seconds,
             "lsn_gap_bytes": lsn_gap_bytes,
-            "health_status": health_status,
+            "state": state,
+            "replica_replay_lag_seconds" : replica_replay_lag_seconds
         }));
     }
     (
@@ -55,8 +59,7 @@ pub async fn metrics_handler(
 ) -> impl IntoResponse {
     info!("Received request for replication metrics from Prometheus");
 
-    let query =
-        "SELECT replica_name, replay_lag_seconds, lsn_gap_bytes FROM pgpulse.replication_status";
+    let query = "SELECT application_name, replay_lag_seconds, lsn_gap_bytes FROM pgpulse.replication_status;";
 
     let rows = match client.query(query, &[]).await {
         Ok(rows) => rows,
@@ -70,18 +73,18 @@ pub async fn metrics_handler(
     };
 
     for row in rows {
-        let name: &str = row.get("replica_name");
-        let lag: f64 = row.get("replay_lag_seconds");
-        let lsn_gap: f64 = row.get("lsn_gap_bytes");
+        let name: &str = row.get("application_name");
+        let lag: Option<f64> = row.get("replay_lag_seconds");
+        let lsn_gap: Option<i64> = row.get("lsn_gap_bytes");
 
         metrics
             .replication_lag_seconds
             .with_label_values(&[&name])
-            .set(lag);
+            .set(lag.unwrap_or(0.0));
         metrics
             .lsn_gap_bytes
             .with_label_values(&[&name])
-            .set(lsn_gap);
+            .set(lsn_gap.unwrap_or(0) as f64);
     }
 
     // for health status

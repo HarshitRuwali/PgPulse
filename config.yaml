@@ -1,7 +1,7 @@
 primary:
   host: localhost
   port: 5432
-  name: postgres
+  name: pgpulse
   user: pgpulse
   password: pgpulse
   ssl_enabled: false
