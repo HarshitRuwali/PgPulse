@@ -294,6 +294,13 @@ curl http://localhost:8080/metrics
 ### Grafana Dashboard
 ![Grafana Dashboard](./assets/Screenshot_2026-05-01.png)
 
+
+## Future work
+
+- Encrypt the replica connection details in the `postgresql.conf` file and decrypt it in the background worker before connecting to the replica.
+As of now, the replica connection details are stored in plain text in the `postgresql.conf` file, which is not secure.
+
+
 ## References:
  - [What to Look for if Your PostgreSQL Replication is Lagging](https://severalnines.com/blog/what-look-if-your-postgresql-replication-lagging/)
  - [Practical PostgreSQL Logical Replication: Setting Up an Experimentation Environment Using Docker](https://dev.to/ietxaniz/practical-postgresql-logical-replication-setting-up-an-experimentation-environment-using-docker-4h50)
