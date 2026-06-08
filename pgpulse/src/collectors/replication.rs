@@ -2,6 +2,7 @@
 use crate::guc;
 use crate::models::ReplicationClient;
 use heapless;
+use pgrx::prelude::*;
 use pgrx::spi::{Spi, SpiError};
 use pq_sys::{
     ConnStatusType, ExecStatusType, PGconn, PQclear, PQconnectdb, PQerrorMessage, PQexec, PQfinish,
@@ -111,12 +112,12 @@ pub fn collect_replica_time_lag() -> Option<f64> {
         if PQstatus(conn) != ConnStatusType::CONNECTION_OK {
             let err_ptr = PQerrorMessage(conn);
             let err_message = CStr::from_ptr(err_ptr).to_string_lossy();
-            eprintln!("Connection failed: {}", err_message);
+            warning!("Connection failed: {}", err_message);
 
             PQfinish(conn);
             return None;
         }
-        println!("Connected successfully to PostgreSQL via raw libpq!");
+        warning!("Connected successfully to PostgreSQL via raw libpq!");
 
         let query = c"SELECT EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp()))::float8 AS replay_lag_seconds";
 

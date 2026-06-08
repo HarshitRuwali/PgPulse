@@ -28,7 +28,7 @@ impl Metrics {
                 &["node"]
             )?,
             long_running_query_count: prometheus::register_int_gauge!(
-                "pgpulse_long_running_queries_total",
+                "pgpulse_long_running_queries",
                 "Number of queries exceeding the long-running threshold"
             )?,
         })

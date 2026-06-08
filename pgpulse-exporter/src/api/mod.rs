@@ -12,7 +12,7 @@ pub fn create_router(
         .route("/health", get(routes::health_handler))
         .route("/metrics", get(routes::metrics_handler))
         .route(
-            "/replication_status",
+            "/replication-status",
             get(routes::replication_status_handler),
         )
         .with_state((metrics, client))
