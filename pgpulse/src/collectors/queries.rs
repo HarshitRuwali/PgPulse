@@ -6,8 +6,7 @@ use pgrx::{
 
 use crate::{guc, models::LongRunningQuery};
 
-pub fn get_long_running_queries(// ) -> Result<HVec<LongRunningQuery,>, SpiError> {
-) -> Result<heapless::Vec<LongRunningQuery, 16>, SpiError> {
+pub fn get_long_running_queries() -> Result<heapless::Vec<LongRunningQuery, 16>, SpiError> {
     let threshold = guc::LONG_RUNNING_QUERY_WARNING_SECONDS.get() as f64;
     let query = "
         SELECT

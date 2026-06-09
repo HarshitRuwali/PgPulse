@@ -1,11 +1,11 @@
 -- Dedicated schema for pgpulse
-CREATE SCHEMA pgpulse;
+CREATE SCHEMA IF NOT EXISTS pgpulse;
 
 -- Friendly views wrap the internal pg_extern functions
-CREATE VIEW pgpulse.replication_status AS
+CREATE OR REPLACE VIEW pgpulse.replication_status AS
     SELECT * FROM pgpulse_replication_status();
 
-CREATE VIEW pgpulse.long_running_queries AS
+CREATE OR REPLACE VIEW pgpulse.long_running_queries AS
     SELECT * FROM pgpulse_long_running_queries();
 
 -- Allow any role with CONNECT to read monitoring data

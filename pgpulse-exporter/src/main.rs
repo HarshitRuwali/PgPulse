@@ -23,11 +23,12 @@ async fn main() -> anyhow::Result<()> {
     let config = config::load_config(&cli.config)?;
     info!("Config loaded!");
 
-    let ssl_mode = if config.primary.ssl_enabled {
-        "require"
-    } else {
-        "disable"
-    };
+    if config.primary.ssl_enabled {
+        anyhow::bail!(
+            "SSL is enabled for primary connection, but SSL support is not implemented in pgpulse-exporter yet. Please disable SSL or implement SSL support."
+        );
+    }
+    let ssl_mode = "disable";
 
     let pg_url = format!(
         "host={} port={} dbname={} user={} password={} sslmode={}",

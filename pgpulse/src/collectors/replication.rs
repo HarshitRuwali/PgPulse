@@ -15,8 +15,13 @@ use std::ffi::{CStr, CString};
 
 static MAX_REPLICATION_CLIENTS: usize = 16;
 
-pub fn collect_replication_clients(
-) -> Result<(heapless::Vec<ReplicationClient, MAX_REPLICATION_CLIENTS>, usize), SpiError> {
+pub fn collect_replication_clients() -> Result<
+    (
+        heapless::Vec<ReplicationClient, MAX_REPLICATION_CLIENTS>,
+        usize,
+    ),
+    SpiError,
+> {
     let query = "
         SELECT
             application_name,
@@ -82,8 +87,12 @@ pub fn collect_replication_clients(
                 replay_lag_seconds: row.get_by_name("replay_lag_seconds")?,
                 lsn_gap_bytes: row.get_by_name("lsn_gap_bytes")?,
             };
-            clients.push(replica_client).ok();
-            count += 1;
+            if clients.push(replica_client).is_ok() {
+                count += 1;
+            } else {
+                warning!("Maximum replication clients reached, some clients may not be collected");
+                break;
+            }
         }
         Ok((clients, count))
     })
@@ -104,7 +113,7 @@ pub fn collect_replica_time_lag() -> Option<f64> {
     // use dblink or libpq to connect to the replica and run the query to get the replay lag
 
     let conn_str = CString::new(format!(
-        "host={} port={} dbname={} user={} password={} sslmode={}",
+        "host={} port={} dbname={} user={} password={} sslmode={} connect_timeout=5",
         host, port, dbname, user, password, ssl
     ))
     .expect("Failed to create CString");
@@ -120,21 +129,30 @@ pub fn collect_replica_time_lag() -> Option<f64> {
             PQfinish(conn);
             return None;
         }
-        warning!("Connected successfully to PostgreSQL via raw libpq!");
+        info!("Connected successfully to PostgreSQL via raw libpq!");
 
         let query = c"SELECT EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp()))::float8 AS replay_lag_seconds";
 
         let result = PQexec(conn, query.as_ptr());
+        if result.is_null() {
+            warning!("PQexec failed: result is null");
+            PQfinish(conn);
+            return None;
+        }
 
         let replay_lag_seconds = if PQresultStatus(result) == ExecStatusType::PGRES_TUPLES_OK
             && PQntuples(result) > 0
             && PQnfields(result) > 0
         {
-            let val_ptr: *mut i8 = PQgetvalue(result, 0, 0);
-            CStr::from_ptr(val_ptr)
-                .to_str()
-                .ok()
-                .and_then(|s| s.parse::<f64>().ok())
+            let val_ptr = PQgetvalue(result, 0, 0);
+            if val_ptr.is_null() {
+                None
+            } else {
+                CStr::from_ptr(val_ptr)
+                    .to_str()
+                    .ok()
+                    .and_then(|s| s.parse::<f64>().ok())
+            }
         } else {
             None
         };
