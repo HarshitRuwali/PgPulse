@@ -80,7 +80,7 @@ Artifacts are placed under `target/release/pgpulse-pg18/` mirroring the system l
 target/release/pgpulse-pg18/
   usr/lib/postgresql/18/lib/pgpulse.so
   usr/share/postgresql/18/extension/pgpulse.control
-  usr/share/postgresql/18/extension/pgpulse--0.1.0.sql
+  usr/share/postgresql/18/extension/pgpulse--0.x.x.sql
 ```
 
 ### 4. Install the artifacts
@@ -90,7 +90,7 @@ cp target/release/pgpulse-pg18/usr/lib/postgresql/18/lib/pgpulse.so \
     /usr/lib/postgresql/18/lib/
 
 cp target/release/pgpulse-pg18/usr/share/postgresql/18/extension/pgpulse.control \
-   target/release/pgpulse-pg18/usr/share/postgresql/18/extension/pgpulse--0.1.0.sql \
+   target/release/pgpulse-pg18/usr/share/postgresql/18/extension/pgpulse--0.x.x.sql \
     /usr/share/postgresql/18/extension/
 ```
 

@@ -73,17 +73,17 @@ pub async fn metrics_handler(
     };
 
     for row in rows {
-        let name: &str = row.get("application_name");
+        let name: String = row.get("application_name");
         let lag: Option<f64> = row.get("replay_lag_seconds");
         let lsn_gap: Option<i64> = row.get("lsn_gap_bytes");
 
         metrics
             .replication_lag_seconds
-            .with_label_values(&[&name])
+            .with_label_values(&[name.as_str()])
             .set(lag.unwrap_or(0.0));
         metrics
             .lsn_gap_bytes
-            .with_label_values(&[&name])
+            .with_label_values(&[name.as_str()])
             .set(lsn_gap.unwrap_or(0) as f64);
     }
 

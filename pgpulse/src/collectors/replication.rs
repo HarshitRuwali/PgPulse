@@ -13,7 +13,7 @@ use std::ffi::{CStr, CString};
 // use postgres::{Client, NoTls};
 /// Use spi instead of tokio_postgres to query the replica metrics from within the PostgreSQL extension
 
-static MAX_REPLICATION_CLIENTS: usize = 16;
+const MAX_REPLICATION_CLIENTS: usize = 16;
 
 pub fn collect_replication_clients() -> Result<
     (
