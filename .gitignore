@@ -27,3 +27,7 @@ target
 .vscode/
 
 roadmap.md
+.safelint_cache/
+site/
+pyproject.toml
+uv.lock
