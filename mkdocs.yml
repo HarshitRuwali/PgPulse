@@ -1,0 +1,37 @@
+site_name: PgPulse
+site_description: PgPulse documentation for PostgreSQL replication monitoring
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue grey
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue grey
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+nav:
+  - Home: index.md
+  - Quick Start: quick-start.md
+  - Architecture: architecture.md
+  - Configuration: configuration.md
+  - PostgreSQL Extension: extension.md
+  - Exporter: exporter.md
+  - Metrics and APIs: metrics-and-apis.md
+  - AWS RDS Approval: aws-rds-approval.md
+  - Operations: operations.md
+  - Development: development.md
+  - Troubleshooting: troubleshooting.md
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
