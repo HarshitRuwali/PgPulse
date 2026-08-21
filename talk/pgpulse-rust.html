@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PgPulse. Writing a PostgreSQL Extension in Rust</title>
+<link rel="stylesheet" href="vendor/reveal/dist/reset.css">
+<link rel="stylesheet" href="vendor/reveal/dist/reveal.css">
+<link rel="stylesheet" href="vendor/reveal/dist/theme/black.css" id="theme">
+<link rel="stylesheet" href="vendor/reveal/plugin/highlight/monokai.css">
+<link rel="stylesheet" href="assets/pgpulse.css">
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<section class="title-slide">
+  <div class="kicker">Rust &middot; PostgreSQL &middot; pgrx</div>
+  <h1>PgPulse</h1>
+  <p class="sub">I moved my monitoring <span class="hl">inside</span> PostgreSQL.<br>
+  It did not go well for a while.</p>
+  <p class="who"><b>Harshit Ruwali</b> &nbsp;·&nbsp; github.com/HarshitRuwali/pgpulse</p>
+  <aside class="notes">
+    First talk. Breathe. Say your name, one line, move on. Do not do a bio.
+
+    "I wrote a monitoring tool twice. The second time I put it inside the database, and it
+    taught me more about Postgres than five years of using it."
+  </aside>
+</section>
+
+<section>
+  <p class="kicker">Before we start</p>
+  <p class="statement">I did not set out to write<br>a PostgreSQL extension.<br><span class="hl">I ended up writing one.</span></p>
+  <div class="card pgline" style="margin-top:1em">
+    <p class="small">I am not an expert in PostgreSQL internals. Some choices here can be improved.</p>
+    <p class="small"><em>If you see a better way, I am open to suggestions and contributions.</em></p>
+  </div>
+  <p class="smaller muted" style="margin-top:1em">The code is public: github.com/HarshitRuwali/pgpulse</p>
+  <aside class="notes">
+    Say this once without apologising for the rest of the talk.
+
+    I did not begin this project as a PostgreSQL internals expert, and I did not plan to write an
+    extension. I followed a monitoring problem until an extension became the answer.
+
+    What follows is what I learned by building it, including the mistakes. There are choices in
+    here that can be improved. The code is public, and if you know a better way to do something,
+    I genuinely want to hear it.
+  </aside>
+</section>
+
+<section class="divider">
+  <span class="num">ONE</span>
+  <h2>A monitor that needed monitoring</h2>
+  <aside class="notes">
+    NARRATE, don't read:
+    Production report disagreed with itself. Refresh, different number. We checked the app, the
+    cache, the query. All fine.
+
+    Reads were hitting a replica a few seconds behind. Not a failure, that's replication. It's a
+    bug when nobody watches the gap. And we weren't. We had CPU, disk, connections. Not "how far
+    behind is the replica."
+
+    And I'd just finished a Rust bootcamp and was sick of writing port scanners.
+  </aside>
+</section>
+
+<section>
+  <h2 class="rule">v1: a normal Rust service</h2>
+  <div class="cols">
+    <div>
+      <ul class="tight small">
+        <li><code>tokio-postgres</code></li>
+        <li><code>Arc&lt;RwLock&lt;Snapshot&gt;&gt;</code></li>
+        <li><code>axum</code> + <code>prometheus</code></li>
+      </ul>
+      <p class="small muted">Two weeks. Boring. Worked.</p>
+    </div>
+    <div>
+      <div class="flow">
+        <div class="node rs"><b>pgpulse</b><span>poll loop + HTTP</span></div>
+        <div class="arrow">↓</div>
+        <div class="node db"><b>primary</b><span>pg_stat_replication</span></div>
+        <div class="node db"><b>replica</b><span>pg_last_xact_replay_timestamp()</span></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    This is what any of us would build. Poll both databases, keep the latest snapshot behind an
+    RwLock, serve it to Prometheus.
+
+    Primary gives you the byte gap per replica. Replica tells you how stale it actually is.
+  </aside>
+</section>
+
+<section>
+  <p class="statement">Now I had <span class="hl">two things</span><br>to keep alive.</p>
+  <aside class="notes">
+    Beat, then: it worked, and it annoyed me. Every cluster needed one more binary. One more
+    thing to deploy, credential, upgrade.
+
+    And it had the same failure mode as the database. If it quietly died, you found out when you
+    needed it. I built a monitor that needed monitoring.
+
+    Postgres already runs code inside the server. So.
+  </aside>
+</section>
+
+<section class="divider">
+  <span class="num">TWO</span>
+  <h2>The database became the runtime</h2>
+  <aside class="notes">
+    That deployment problem made the next decision for me: move the collector into Postgres.
+    The rest of the talk is what changed when the database stopped being only the thing I
+    queried and became the process running my code. "Weekend project," I said.
+  </aside>
+</section>
+
+<section>
+  <h2 class="rule">What an extension actually is</h2>
+  <pre class="tiny"><code data-trim data-noescape class="text">pgpulse.so       →  $libdir
+pgpulse.control  →  extension/
+pgpulse--0.2.0.sql</code></pre>
+  <p class="srcref"><b>postgresql.conf</b></p>
+  <pre class="tiny"><code data-trim data-noescape class="ini">shared_preload_libraries = 'pgpulse'</code></pre>
+  <p class="small">Three files, one config line, and <em>one symbol.</em></p>
+  <aside class="notes">
+    The postmaster dlopens your library at startup, before it forks anything, and calls exactly
+    one symbol.
+
+    Say this clearly because it explains the whole second half of the talk: your Rust is a cdylib
+    inside the database server's address space, in its process tree, under its crash semantics.
+    There is no sandbox.
+
+    You panic, that's not a bug report. That's an incident.
+  </aside>
+</section>
+
+<section>
+  <h2 class="rule">pgrx does the C part</h2>
+  <p class="srcref">pgpulse/<b>Cargo.toml</b></p>
+  <pre class="tiny"><code data-trim data-noescape class="toml">[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pgrx = "=0.18.0"</code></pre>
+  <p class="srcref">pgpulse/src/<b>lib.rs</b></p>
+  <pre class="tiny"><code data-trim data-noescape class="rust">::pgrx::pg_module_magic!();
+
+/// Return the health status
+#[pg_extern]
+fn pgpulse_health_status() -&gt; String {
+    let snapshot = shared_mem::read_snapshot();
+    let health_status = format!("{:?}", snapshot.health_status);
+    health_status
+}</code></pre>
+  <p class="small">Write a Rust function, get a <em>real SQL function.</em> pgrx generates the C glue and the DDL.</p>
+  <aside class="notes">
+    Without pgrx you are writing C-shaped Rust against raw pg_sys. With it you get:
+
+    - generated bindings to the whole Postgres API, for pg13 through pg18
+    - #[pg_extern], which does two things: generates a C-ABI wrapper that unpacks the fcinfo and
+      converts Datums to and from Rust types, and generates the DDL, which comes out as
+      CREATE FUNCTION ... LANGUAGE c AS 'MODULE_PATHNAME', 'pgpulse_health_status_wrapper'.
+      Note that last bit: the SQL function is bound to a *symbol name*. Same idea as
+      dlsym("_PG_init") and .set_function(). Postgres finds your code by name, everywhere.
+    - #[pg_guard], which bridges two incompatible error models. Rust unwinds, Postgres uses
+      setjmp/longjmp. It wraps your function in catch_unwind and re-raises a Rust panic as a
+      Postgres ereport, so a panic never unwinds into C. The generated pg_sys bindings do the
+      mirror image with sigsetjmp, so a Postgres error never longjmps through your Rust frames.
+      #[pg_extern] applies #[pg_guard] for you; you only write it by hand for entry points that
+      aren't SQL functions, like _PG_init and the worker.
+      Why it matters: without it, an out-of-bounds index in one of my functions unwinds into C,
+      which crashes the backend, which makes the postmaster kill every other backend and enter
+      crash recovery. With it, that same bug is one ERROR in one session.
+    - safe wrappers over SPI, LWLocks and background workers
+    - cargo pgrx: init, run, test, package
+
+    pg_module_magic! emits the ABI fingerprint. Without it Postgres refuses to load the library
+    at all: "incompatible library: missing magic block".
+
+    Credit it honestly, it does an enormous amount of work. Pin the exact version, the API moves
+    and your whole build sits downstream of it.
+  </aside>
+</section>
+
+<section>
+  <h2 class="rule">How it actually boots</h2>
+  <div class="boot">
+    <div class="who pm">postmaster</div>
+    <div class="step pm"><b>reads <code>shared_preload_libraries</code>, <code>dlopen</code>s <code>pgpulse.so</code></b>
+      <span>checks the magic block first, or refuses: "incompatible library"</span></div>
+
+    <div class="who pm">postmaster</div>
+    <div class="step pm"><b><code>dlsym("_PG_init")</code> and calls it</b>
+      <span>by name. no registration, no manifest</span></div>
+
+    <div class="who">_PG_init</div>
+    <div class="step"><b><code>guc::init()</code> &nbsp;·&nbsp; <code>shared_mem::init()</code> &nbsp;·&nbsp; <code>bgw::init()</code></b>
+      <span>define settings · install the shmem hooks · register the worker</span></div>
+
+    <div class="who pm">postmaster</div>
+    <div class="step pm"><b>sizes shared memory, then allocates it</b>
+      <span><code>RequestAddinShmemSpace(size_of::&lt;Shared&lt;T&gt;&gt;())</code> → <code>ShmemInitStruct</code></span></div>
+
+    <div class="who bgw">fork</div>
+    <div class="step bgw"><b>the worker is forked, and reloads the library</b>
+      <span>so <code>_PG_init</code> runs <em>again</em>, in the child</span></div>
+
+    <div class="who bgw">worker</div>
+    <div class="step bgw"><b><code>dlsym("pgpulse_worker_main")</code>, then the poll loop</b>
+      <span>attach signals · connect to SPI · every 10s forever</span></div>
+  </div>
+  <p class="small">All of it before a single client has connected.</p>
+  <aside class="notes">
+    This is the whole startup, and it explains three things people usually find surprising.
+
+    One: why shared_preload_libraries and not just CREATE EXTENSION. Two of the things _PG_init
+    does are only legal in the postmaster before it forks. RequestAddinShmemSpace only has an
+    effect while the postmaster is sizing the segment, and worker registration has to happen
+    before the postmaster starts forking. LOAD it in a session instead and you are far too late:
+    no shared memory, no worker, and no error either.
+
+    Two: why changing the extension needs a database restart. shared_preload_libraries is
+    postmaster-level. There is no reload path. That is the whole reason my dev loop hurt.
+
+    Three, and this is the one that bites later: _PG_init runs in *every* process that loads the
+    library, including the worker the postmaster just forked. Say that clearly and let it sit,
+    because assumption two is about exactly this.
+
+    Also worth noting: CREATE EXTENSION is a completely separate thing. Loading the library is
+    dlopen. CREATE EXTENSION is per-database bookkeeping that creates the SQL functions. The
+    worker runs whether or not anyone ever ran CREATE EXTENSION anywhere.
+  </aside>
+</section>
+
+<section class="divider">
+  <span class="num">THREE</span>
+  <h2>Four contracts, one loop</h2>
+  <aside class="notes">
+    The extension is small, but it crosses four PostgreSQL contracts. I will build the loop once
+    from those four pieces. Each one will then have a clear role when we get to the failures.
+  </aside>
+</section>
+
+<section>
+  <h2 class="rule">Four contracts to get right</h2>
+  <div class="cols">
+    <div class="card pgline"><h3>GUC</h3><p class="small">Config</p></div>
+    <div class="card pgline"><h3>Background worker</h3><p class="small">Your loop</p></div>
+    <div class="card pgline"><h3>Shared memory</h3><p class="small">Your state</p></div>
+    <div class="card pgline"><h3>SPI</h3><p class="small">SQL from inside</p></div>
+  </div>
+  <p class="small center" style="margin-top:1em">Config → process → state → query</p>
+  <aside class="notes">
+    These are not four unrelated APIs. They are the four steps of the collector loop.
+
+    GUC: Postgres' own settings system. postgresql.conf, SHOW, reload on SIGHUP. I get eleven
+    settings and zero config parsing. Don't invent a config file.
+
+    BGW: a process the postmaster forks, supervises and restarts.
+
+    Shared memory: fixed segment mapped into every backend, guarded by a lightweight lock.
+
+    SPI: run SQL from inside the server. No client, no socket.
+
+    The next four slides follow that order, then the diagram puts them together. Keep this tour
+    short; the failures will supply the detail.
+  </aside>
+</section>
+
+<section>
+  <h3>GUC</h3>
+  <p class="srcref">pgpulse/src/<b>guc.rs</b> · init()</p>
+  <pre class="tiny"><code data-trim data-noescape class="rust">pub static REPLICA_HOST: GucSetting&lt;Option&lt;CString&gt;&gt; = GucSetting::&lt;Option&lt;CString&gt;&gt;::new(None);
+
+GucRegistry::define_string_guc(
+    c"pgpulse.replica_host",
+    c"host",
+    c"Hostname or IP address of the replica PostgreSQL instance to monitor",
+    &amp;REPLICA_HOST,
+    GucContext::Sighup, // takes effect on config reload
+    GucFlags::default(),
+);</code></pre>
+  <p class="srcref"><b>postgresql.conf</b></p>
+  <pre class="tiny"><code data-trim data-noescape class="ini">pgpulse.replica_host = '192.168.1.20'
+pgpulse.replica_port = 5432</code></pre>
+  <p class="small">My settings become <em>Postgres settings.</em> <code>SHOW</code> works, <code>pg_settings</code> works, reload works.</p>
+  <aside class="notes">
+    Postgres already has a configuration system, so don't invent one. Declare a static, register
+    it in _PG_init, and you're done.
+
+    What you get free: it shows up in SHOW and in pg_settings, operators configure it exactly the
+    way they configure everything else, and there's no config file of mine to parse, validate or
+    document.
+
+    GucContext::Sighup is the good part. An operator changes a threshold and reloads the config.
+    No restart, no redeploy, no code change. GucSetting::get() reads the current value each time
+    you call it, so the next poll just picks it up.
+
+    And the trap, which is coming up in issue four: registration is once, in _PG_init, for the
+    life of the process. I had guc::init() in my SIGHUP branch, which feels right and is wrong.
+  </aside>
+</section>
+
+<section>
+  <h3>Background worker</h3>
+  <p class="srcref">pgpulse/src/<b>bgw.rs</b> · init(), called from <b>_PG_init</b></p>
+  <pre class="tiny"><code data-trim data-noescape class="rust">BackgroundWorkerBuilder::new("postgres monitoring worker")
+    .set_function("pgpulse_worker_main")   // entry point, by name
+    .set_library("pgpulse")
+    .enable_spi_access()
+    .set_restart_time(Some(Duration::from_secs(10))) // restart if it crashes
+    .load();</code></pre>
+  <p class="srcref">pgpulse/src/<b>bgw.rs</b> · <b>pgpulse_worker_main()</b>, the entry point above</p>
+  <pre class="tiny"><code data-trim data-noescape class="rust">pub extern "C-unwind" fn pgpulse_worker_main(_arg: pg_sys::Datum) {
+    BackgroundWorker::attach_signal_handlers(SignalWakeFlags::SIGHUP | SignalWakeFlags::SIGTERM);
+    BackgroundWorker::connect_worker_to_spi(Some("postgres"), None);
+
+    loop {
+        let interval = Duration::from_secs(guc::POLL_INTERVAL_SECONDS.get() as u64);
+        let alive = BackgroundWorker::wait_latch(Some(interval));   // sleep 10s
+        if !alive {
+            break;                                                  // SIGTERM, or postmaster died
+        }
+        …                                                           // collect, then write
+    }
+}</code></pre>
+  <aside class="notes">
+    Registered in _PG_init. Postmaster forks it and supervises it.
+
+    wait_latch, not thread::sleep. A sleeping worker ignores shutdown and hangs your restart.
+    Returns false on SIGTERM or postmaster death.
+
+    set_function takes a symbol name as a *string*. Remember that, it bites later.
+  </aside>
+</section>
+
+<section>
+  <h3>Shared memory</h3>
+  <p class="srcref">pgpulse/src/<b>shared_mem.rs</b></p>
+  <pre class="tiny"><code data-trim data-noescape class="rust">static PGPULSE_METRICS: PgLwLock&lt;MetricSnapshot&gt; = unsafe { PgLwLock::new(c"pgpulse_metrics") };
+
+pub fn write_snapshot(snapshot: MetricSnapshot) {   // the worker, every 10s
+    let mut guard = PGPULSE_METRICS.exclusive();
+    *guard = snapshot;
+}
+
+pub fn read_snapshot() -&gt; MetricSnapshot {          // any user session, via SQL
+    let guard = PGPULSE_METRICS.share();
+    guard.clone()
+}</code></pre>
+  <p class="small">One writer, many readers, one lock. The only state the extension keeps.</p>
+  <aside class="notes">
+    One writer every ten seconds, many readers via SQL functions.
+
+    Only the latest snapshot. No history table, no writes to anyone's database. Prometheus
+    already stores time series better than I will. That's what makes it cheap enough for a
+    production primary. About 10 KB.
+  </aside>
+</section>
+
+<section>
+  <h3>SPI</h3>
+  <p class="srcref">pgpulse/src/collectors/<b>replication.rs</b> · collect_replication_clients()</p>
+  <pre class="tiny"><code data-trim data-noescape class="sql">SELECT
+    application_name,
+    state,
+    EXTRACT(EPOCH FROM replay_lag)::float8  AS replay_lag_seconds,
+    pg_wal_lsn_diff(
+        pg_current_wal_lsn(),
+        COALESCE(replay_lsn, flush_lsn, write_lsn)
+    )::bigint AS lsn_gap_bytes
+FROM pg_stat_replication</code></pre>
+  <pre class="tiny"><code data-trim data-noescape class="rust">Spi::connect(|client| {
+    let rows = client.select(query, None, &amp;[])?;
+    …
+})</code></pre>
+  <p class="small">The primary's own view of every connected replica, read without a connection.</p>
+  <aside class="notes">
+    Run SQL from inside the server. No connection, no socket, no auth.
+
+    The COALESCE matters: replay_lsn is null until the replica reports, so fall back to flush,
+    then write. Otherwise your lag metric is null exactly when you need it.
+
+    Two numbers, opposite ends of the cluster. Bytes on the primary: how much work is
+    outstanding. Seconds on the replica: how wrong your read is, and null when idle, which looks
+    exactly like broken.
+
+    SPI has one prerequisite. We'll get there.
+  </aside>
+</section>
+
+<section>
+  <h2 class="rule">One poll. Two views. One verdict.</h2>
+  <p class="kicker pg">pgpulse_worker_main · every 10 seconds by default</p>
+  <div class="poll-pipeline">
+    <div class="poll-stage pgline">
+      <span class="poll-step">1</span>
+      <b>SPI on primary</b>
+      <span><code>lsn_gap_bytes</code><br>all connected replicas</span>
+    </div>
+    <div class="poll-arrow">→</div>
+    <div class="poll-stage rustline">
+      <span class="poll-step">2</span>
+      <b>raw libpq to replica</b>
+      <span><code>replica_replay_<br>lag_seconds</code><br><code>connect_timeout=5</code></span>
+    </div>
+    <div class="poll-arrow">→</div>
+    <div class="poll-stage">
+      <span class="poll-step">3</span>
+      <b>evaluate health</b>
+      <span>worst available<br>signal wins</span>
+    </div>
+    <div class="poll-arrow">→</div>
+    <div class="poll-stage pgline">
+      <span class="poll-step">4</span>
+      <b>write snapshot</b>
+      <span><code>PgLwLock</code><br>shared memory</span>
+    </div>
+  </div>
+  <div class="cols" style="margin-top:.75em">
+    <div class="card">
+      <p class="kicker">Default health thresholds</p>
+      <p class="smaller"><span class="pill crit">Critical</span> any gap ≥ 100 MB or replay age ≥ 60s</p>
+      <p class="smaller"><span class="pill warn">Warning</span> no replicas, gap ≥ 10 MB, or replay age ≥ 10s</p>
+      <p class="smaller"><span class="pill ok">Healthy</span> otherwise</p>
+      <p class="smaller muted">libpq returning <code>None</code> leaves byte gap to decide.</p>
+    </div>
+    <div class="card pgline">
+      <p class="kicker pg">Read after the write</p>
+      <div class="publish-path">
+        <span>SQL functions/views</span><b>→</b><span>exporter</span><b>→</b><span>Prometheus</span>
+      </div>
+      <p class="smaller muted">Data and <code>health_status</code> are published in the same snapshot.</p>
+    </div>
+  </div>
+  <aside class="notes">
+    This is the complete poll, in execution order.
+
+    First, SPI asks the primary for pg_stat_replication. That gives one byte gap per connected
+    replica: how much WAL the primary has generated that each replica has not replayed yet. It is
+    local, cheap and available without another connection.
+
+    But byte gap is workload-dependent. Ten megabytes could mean milliseconds on a busy system
+    or a long time on a quiet one. The product question was "how wrong can this read be?" Only a
+    replica can answer that. So the same worker opens one outbound raw-libpq connection to the
+    configured replica and asks for now() minus pg_last_xact_replay_timestamp(). That gives replay
+    age in seconds. The connection has a five-second timeout; failure returns None instead of
+    blocking the entire collector.
+
+    Only after that libpq call returns does evaluate_health run over the combined snapshot. No
+    connected replicas is Warning.
+    Otherwise any critical signal returns Critical, any warning signal makes the result Warning,
+    and only a clean snapshot is Healthy. Those numbers on screen are the default GUC values, not
+    constants in the evaluator.
+
+    Be precise about missing replica time: None does not itself make health worse. The evaluator
+    still uses every primary-side byte gap it has. That is graceful degradation, but it also
+    means collected_at and the logs are still needed to distinguish unavailable data from a
+    genuinely healthy time signal.
+
+    Finally collect_and_store_metrics returns the completed MetricSnapshot. Only then does the
+    outer worker loop call write_snapshot. There is no partial snapshot in shared memory while
+    libpq is running: readers keep seeing the previous complete snapshot until the new data and
+    health verdict are ready. SQL functions expose that snapshot. The exporter is now only a
+    normal client that reads those functions and translates them to Prometheus.
+
+    This slide also sets up the failures: the snapshot crosses a shared-memory boundary, SPI
+    crosses a backend-state boundary, and libpq crosses the fork-safety boundary.
+  </aside>
+</section>
+
+<section class="divider">
+  <span class="num">FOUR</span>
+  <h2>Three normal Rust assumptions broke</h2>
+  <aside class="notes">
+    Slow down, this is the fun part and it's why people came.
+
+    The architecture was coherent. My assumptions were not. I had brought three habits from a
+    normal Rust service: values can own heap data, a process running SQL behaves like a backend,
+    and a synchronous client library is safe to call. Each one crossed a boundary in that
+    diagram. Each one was wrong here.
+  </aside>
+</section>
+
+<section>
+  <p class="kicker">Assumption 1</p>
+  <h2 class="rule">Shared memory vs the heap</h2>
+  <p class="beat wrote">What I wrote</p>
+  <p class="srcref">pgpulse/src/<b>models.rs</b></p>
+  <pre class="tiny"><code data-trim data-noescape class="rust">pub struct MetricSnapshot {
+  pub replication_metrics: ReplicationMetrics,
+  pub primary_metrics: PrimaryMetrics,               // holds a Vec&lt;ReplicationClient&gt;
+  pub health_status: HealthStatus,
+  pub collected_at: DateTime&lt;Utc&gt;,
+  pub long_running_queries: Vec&lt;LongRunningQueries&gt;,
+}
+
+unsafe impl pgrx::PGRXSharedMemory for MetricSnapshot {}</code></pre>
+  <aside class="notes">
+    A Vec is three words: pointer, length, capacity. Twenty-four bytes, sat wherever you put
+    them. The elements are somewhere else entirely, on the heap of whichever process allocated
+    them.
+
+    Shared memory is one fixed segment mapped into every backend. Different process, different
+    heap.
+
+    So those twenty-four bytes copy across perfectly. That is the whole problem. Nothing
+    complains, because structurally it is fine. The pointer inside them just refers to an
+    address that means nothing in the process doing the reading.</aside>
+</section>
+
+<section>
+  <p class="beat broke">What happened</p>
+  <pre class="tiny"><code data-trim data-noescape class="text">postgres=# SELECT pgpulse_collected_at();   -- extension loaded, worker registered
+ pgpulse_collected_at
+----------------------
+                  0        &lt;- forever. no error, no crash, no log line.</code></pre>
+  <p class="beat fix" style="margin-top:.9em">The fix</p>
+  <p class="srcref">pgpulse/src/<b>models.rs</b></p>
+  <pre class="tiny"><code data-trim data-noescape class="diff">-use chrono::{DateTime, Utc};
++use heapless;
+
+-    pub application_name: String,
+-    pub replay_lsn: Option&lt;String&gt;,
++    pub application_name: heapless::String&lt;64&gt;,
++    pub replay_lsn: Option&lt;heapless::String&lt;32&gt;&gt;,
+
+-    pub collected_at: DateTime&lt;Utc&gt;,
+-    pub long_running_queries: Vec&lt;LongRunningQueries&gt;,
++    pub collected_at: i64, // Unix timestamp
++    pub long_running_queries: heapless::Vec&lt;LongRunningQuery, 16&gt;,</code></pre>
+  <aside class="notes">
+    Tests passed. Extension loaded. Postgres said so. Worker registered.
+
+    And collected_at returned zero. Forever. No error, no log line, no crash.
+
+    Point at the diff. The unsafe marker did not change; my promise stayed the same. What had
+    to change was the representation behind that promise: a normal Vec became a fixed-capacity
+    heapless Vec whose elements live inline in the shared struct.
+
+    Ask them: what would you check?
+
+    THEN THE FIX, same slide: every heap-backed type in the model, replaced. heapless stores
+    elements inline, so the size is known at compile time and no allocator is involved. Note
+    collected_at too: a chrono DateTime became a plain i64, same reason.
+
+    Honest trade: 16 is a hard cap now. The seventeenth replica gets a warning and a shrug.
+
+    And close it in a sentence: that unsafe impl was me promising the compiler the struct was
+    self-contained, and I was wrong. Nothing checks it.
+  </aside>
+</section>
+
+<section>
+  <p class="kicker">Assumption 2</p>
+  <h2 class="rule">The background worker</h2>
+  <p class="beat wrote">What I wrote</p>
+  <p class="srcref">pgpulse/src/<b>bgw.rs</b> · collect_and_store_metrics()</p>
+  <pre class="tiny"><code data-trim data-noescape class="rust">pub fn collect_and_store_metrics() -&gt; anyhow::Result&lt;MetricSnapshot&gt; {
+  let (replication_clients, replication_client_count) =
+      replication::collect_replication_clients()
+          .map_err(|e| anyhow::anyhow!("SPI error collecting replication clients: {e:?}"))?;
+
+  let long_running_queries = queries::get_long_running_queries()
+      .map_err(|e| anyhow::anyhow!("SPI error collecting long-running queries: {e:?}"))?;
+  …
+}</code></pre>
+  <p class="small">Two SPI calls. Looks like any other function.</p>
+  <aside class="notes">
+    This is the collector, and there is nothing obviously wrong with it. Two SPI queries, error
+    mapped, snapshot built. It is the kind of function you would not look at twice.
+
+    Do not give away the answer yet. Next slide is what Postgres thought of it.</aside>
+</section>
+
+<section>
+  <p class="beat broke">What happened</p>
+  <pre class="tiny"><code data-trim data-noescape class="text">LOG:  background worker "postgres monitoring worker" (PID 62) was terminated by signal 11: Segmentation fault
+LOG:  background worker "postgres monitoring worker" (PID 74) was terminated by signal 11: Segmentation fault
+LOG:  background worker "postgres monitoring worker" (PID 91) was terminated by signal 11: Segmentation fault</code></pre>
+  <p class="beat fix" style="margin-top:.9em">The fix</p>
+  <p class="srcref">pgpulse/src/<b>bgw.rs</b> · collect_and_store_metrics()</p>
+  <pre class="tiny"><code data-trim data-noescape class="diff">+    // SPI requires an active transaction in a BGW
++    BackgroundWorker::transaction(|| {
+-    let (replication_clients, replication_client_count) =
+-        replication::collect_replication_clients()
++        let (replication_clients, _replication_client_count) =
++            replication::collect_replication_clients()
+       …
+-    Ok(snapshot)
++        Ok(snapshot)
++    })</code></pre>
+  <p class="small">Backends get a transaction for free. Workers get nothing.</p>
+  <aside class="notes">
+    set_restart_time of ten seconds, faithfully resurrecting a process that died instantly.
+
+    Point at the wrapper. The collector call is not the important change. The new transaction
+    block creates the transaction-scoped memory, snapshot and resource owner that a normal
+    client backend would already have before running SPI.
+
+    A segfault, in C, called from Rust, in a process I cannot attach a debugger to. The only
+    instrument is the log.
+
+    Here is what actually cracked it, and this is the bit worth giving them. The first line of
+    my worker function logs "background worker started". It never printed. Not once. So the
+    crash happened before any of my own code ran, which in one go eliminated every collector,
+    every query, and the whole health evaluator.
+
+    The general version: in a process you cannot attach to, the *absence* of a log line you
+    expected is evidence, and it is usually better evidence than anything that is present.
+
+    Free second tip while you are here: string literals get compiled into the .so, so you can
+    grep the binary for the log lines you just added. I did. Mine were not in it. Docker had
+    handed me a cached build layer and I had spent hours debugging yesterday's code.
+
+    THEN THE FIX, same slide: That comment is mine, from the commit.
+
+    A client connection gets StartTransactionCommand called for it before every command. You
+    never think about it. A worker is a bare process: no transaction, so no transaction-scoped
+    memory, no snapshot, no resource owner. SPI needs all three.
+
+    HONESTY: I never bisected it to the faulting instruction. I can show you the crash and the
+    fix. If someone presses, agree and say exactly that.
+
+    There was a second fix in that same commit. Next slide.</aside>
+</section>
+
+<section>
+  <h3>You are a C library, not a crate</h3>
+  <p class="srcref">pgpulse/src/<b>bgw.rs</b></p>
+  <pre class="tiny"><code data-trim data-noescape class="rust">.set_function("pgpulse_worker_main")   // Postgres will dlsym this string
+
+#[pg_guard]
+#[no_mangle]                           // ...so don't let Rust rename the symbol
+pub extern "C-unwind" fn pgpulse_worker_main(_arg: pg_sys::Datum) { … }</code></pre>
+  <p class="srcref">pgpulse/src/<b>lib.rs</b> · _PG_init()</p>
+  <pre class="tiny"><code data-trim data-noescape class="rust">// `MyBgworkerEntry` is non-NULL inside every forked BGW process and NULL elsewhere.
+extern "C" {
+  static MyBgworkerEntry: *const pgrx::pg_sys::BackgroundWorker;
+}
+let in_bgw = !unsafe { MyBgworkerEntry }.is_null();
+if !in_bgw {
+  bgw::init();
+}</code></pre>
+  <p class="small">It calls you <em>by name</em>, and it runs <code>_PG_init()</code> <em>again</em> in the worker.</p>
+  <aside class="notes">
+    Both of these come from one fact: you are a C shared library, not a Rust crate.
+
+    First: set_function takes a *string*. Rust mangles symbol names by default, so without
+    no_mangle the symbol in the .so isn't called pgpulse_worker_main, and the postmaster cannot
+    find your entry point. I didn't have this initially.
+
+    Second: _PG_init runs in every process that loads the library, including the worker the
+    postmaster just forked. So the worker registers another worker. MyBgworkerEntry is a C
+    global that's NULL in the postmaster and non-NULL inside a BGW, and it's what Postgres
+    itself uses to answer this question.
+
+    Note that GUC and shared memory init still run in the worker, because pg_shmem_init
+    *attaches* to the existing segment there rather than allocating a new one. Only the worker
+    registration is postmaster-only.
+
+    HONESTY: I had a guard before this, using IsBackgroundWorker, and it never fired. I
+    observed that, I didn't prove why.</aside>
+</section>
+
+<section>
+  <p class="kicker">Assumption 3</p>
+  <h2 class="rule">I reached for a client library</h2>
+  <p class="beat wrote">What I wrote</p>
+  <p class="srcref">pgpulse/<b>Cargo.toml</b> · and collectors/replication.rs</p>
+  <pre class="tiny"><code data-trim data-noescape class="toml">postgres = "0.19.13"</code></pre>
+  <pre class="tiny"><code data-trim data-noescape class="rust">let mut client = Client::connect(&amp;conn_str, NoTls).ok()?;
+let row = client.query_one(
+  "SELECT EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp()))::float8", &amp;[])
+  .ok()?;</code></pre>
+  <p class="small">The same client I used in v1. One query. What could go wrong.</p>
+  <aside class="notes">
+    I needed exactly one outbound connection, because only the replica knows how stale the
+    replica is. So I reached for the client library I had already used in version one.
+
+    Note this is the `postgres` crate, the blocking one. Sync API. That matters on the next
+    slide.</aside>
+</section>
+
+<section>
+  <p class="beat broke">What happened</p>
+  <p class="small">A backend is <em>single-threaded by contract.</em>
+  <code>postgres</code> is a blocking wrapper over <code>tokio-postgres</code>: sync API, still a runtime, still threads.</p>
+  <p class="beat fix" style="margin-top:.9em">The fix</p>
+  <p class="srcref">pgpulse/src/collectors/<b>replication.rs</b> · collect_replica_time_lag()</p>
+  <pre class="tiny"><code data-trim data-noescape class="diff">-    // let mut client = Client::connect(&amp;conn_str, NoTls).ok()?;
+-    // let row = client.query_one("SELECT EXTRACT(EPOCH FROM …", &amp;[]).ok()?;
+-    None
++    let conn: *mut PGconn = PQconnectdb(conn_str.as_ptr());
++    if PQstatus(conn) != ConnStatusType::CONNECTION_OK {
++        PQfinish(conn);
++        return None;
++    }
++    let result = PQexec(conn, query.as_ptr());
++    …
++    PQclear(result);
++    PQfinish(conn);</code></pre>
+  <p class="small">That <code>None</code> shipped. For two weeks.</p>
+  <aside class="notes">
+    I needed one outbound connection to ask the replica how stale it is. Obvious move: the
+    client library I already used in v1. That's the `postgres` crate, the blocking one, which
+    is a synchronous wrapper over tokio-postgres and stands up a tokio runtime underneath. So
+    "sync API" does not mean "no threads".
+
+    The diff shows the replacement: remove the postgres client path, bind to libpq through
+    pq-sys, open the connection with PQconnectdb, execute with PQexec, then clean it up. This is
+    still unsafe FFI, but there is no runtime or helper thread hidden underneath it.
+
+    The reason is simpler than it looks, and it is the surprising bit for a Rust room: a
+    Postgres backend is single-threaded by contract. Memory contexts, the setjmp/longjmp error
+    handling, signal handling, resource owners: none of it is thread-safe.
+
+    pgrx does not just document that, it enforces it. Every call into Postgres runs a thread
+    check first, and its own source says "It's UB to call into Postgres functions from multiple
+    threads... this is called from inside the setjmp shim, as that code is definitely unsound
+    to call in the presence of multiple threads." Call it off the main thread and you get
+    "postgres FFI may not be called from multiple threads."
+
+    So the rule is: no runtime, no thread pool, and no crate that quietly starts one for you.
+    That rules out more of crates.io than people expect. Anything with a background thread, a
+    lazy global, or a connection pool.
+
+    HONESTY: I did not root-cause a specific crash here. I read my own comment, understood the
+    constraint, and removed the dependency. If someone asks what exactly went wrong, say that.
+
+    Do NOT claim this was fork-safety and inherited mutexes. The postmaster is single-threaded,
+    so there is no second thread holding a lock at fork time. That explanation is real in
+    general and wrong here, and someone will know.
+
+    THEN THE FIX, same slide: Look at what's being deleted: commented-out tokio, and a function that just returned None.
+    For two weeks that metric was a stub, because a missing metric beats a crashing worker.
+
+    I'd defend that. It kept the worker alive and honest about what it didn't know.
+
+    Then raw libpq: synchronous, single threaded, fork safe, already linked in. Null check
+    every pointer, clean up on every branch. Least Rust-feeling code in the project.</aside>
+</section>
+
+<section>
+  <p class="kicker">After the big three</p>
+  <h2 class="rule">The smaller cuts</h2>
+  <div class="cols-3">
+    <div class="card">
+      <h4><code>interval out of range</code></h4>
+      <pre class="tiny" style="margin:0"><code data-trim data-noescape class="diff">- AND now() - query_start &gt; make_interval(secs =&gt; $1)
++ AND EXTRACT(EPOCH FROM (now() - query_start)) &gt; $1</code></pre>
+    </div>
+    <div class="card">
+      <h4>Capacity is not length</h4>
+      <pre class="tiny" style="margin:0"><code data-trim data-noescape class="diff">- clients[count] = ReplicationClient {
++ clients.push(replica_client).ok();</code></pre>
+    </div>
+    <div class="card">
+      <h4>GUCs on SIGHUP</h4>
+      <pre class="tiny" style="margin:0"><code data-trim data-noescape class="diff">  if BackgroundWorker::sighup_received() {
+-     guc::init();
++     // No need to re-init the GUCs again
+  }</code></pre>
+    </div>
+  </div>
+  <p class="small center" style="margin-top:.9em">Also <code>connect_timeout=5</code>, because libpq's default is <em>minutes</em>.</p>
+  <aside class="notes">
+    Fast, don't dwell. About 30 seconds each.
+
+    1. interval out of range.
+       Query was: now() - query_start > make_interval(secs => $1), $1 a Rust f64.
+       An interval is months:i32, days:i32, microseconds:i64, validated on construction.
+       Something in that construction rejected the value.
+       Fixed by comparing numbers: EXTRACT(EPOCH FROM (now() - query_start)) > $1.
+       HONESTY: I never established which conversion was at fault. The lesson holds anyway:
+       don't construct a type you only wanted in order to compare it.
+
+    2. heapless::Vec is an array with a length, not a list.
+       I wrote clients[count] = rc, which is how you fill a preallocated array in C.
+       Index-assign only writes slots that already exist, and a fresh Vec has len 0 even though
+       capacity is 16. So clients[0] panics, index out of bounds.
+       Fixed with push(), which returns a Result and hands the element back when full.
+
+    3. Re-registering GUCs on SIGHUP.
+       I had guc::init() inside the "config was reloaded" branch. Felt right, is wrong.
+       Registration is process-lifetime, done once in _PG_init. pgrx calls
+       DefineCustomStringVariable straight through with no guard, and Postgres raises:
+         ERROR: attempt to redefine parameter "pgpulse.replica_host"
+       (guc.c, when the existing entry is not a placeholder). On reload there is genuinely
+       nothing to do. pgrx reads the new value through the GucSetting next time you call get().
+
+    4. connect_timeout=5.
+       libpq's default connect timeout is effectively minutes. An unreachable replica blocks the
+       worker inside PQconnectdb, so the poll loop stops and every metric goes stale because of
+       one unreachable host.
+  </aside>
+</section>
+
+<section>
+  <p class="kicker">The pattern underneath them</p>
+  <h2 class="rule">The manual was one layer down</h2>
+  <div class="cols">
+    <div>
+      <p class="small">Where I actually found answers:</p>
+      <ul class="small tight">
+        <li>the pgrx source code</li>
+        <li><code>examples/</code>, read as documentation</li>
+        <li>Twitch videos from six years ago</li>
+        <li>slides from a FOSDEM 2025 talk</li>
+      </ul>
+    </div>
+    <div>
+      <p class="small muted" style="margin-top:1.8em">There is an API reference.<br>
+      There is no guide.</p>
+    </div>
+  </div>
+  <aside class="notes">
+    Be precise here, because people will check on their phones.
+
+    There IS rustdoc. As of 0.19.2 it's the crate description, one example, and then bare item
+    listings for about forty modules. What does not exist is narrative documentation. No guide,
+    no tutorial, no book.
+
+    And the project used to be called pgx, so a lot of what you find by searching is pgx-era
+    material under the old name.
+
+    So most of my questions ended in ~/.cargo/registry, reading the source. The examples/
+    directory in the repo was more useful than anything else. The maintainer streamed pgx
+    development on Twitch years ago and those videos are genuinely still useful. FOSDEM is a
+    large open-source conference; I found slides from a 2025 pgrx talk there.
+
+    The pattern across those sources was that BGWs, GUCs, SPI and LWLocks are PostgreSQL concepts
+    that pgrx wraps. That explains the three failures we just saw: all three were mistakes about
+    the host, not Rust syntax.
+
+    Frame it as opportunity, not complaint. The ecosystem is small enough that writing down what
+    you learned is a real contribution. That's why I wrote the blog posts, and it's most of why
+    I'm standing here.
+  </aside>
+</section>
+
+<section class="demo-slide">
+  <p class="kicker">Demo</p>
+  <h2 class="rule">Pause the replica. Watch lag climb.</h2>
+  <div class="cols">
+    <div><img class="shot" src="../assets/Screenshot_2026-05-01-1.png" alt="JSON endpoint"></div>
+    <div><img class="shot" src="../assets/Screenshot_2026-05-01.png" alt="Grafana dashboard"></div>
+  </div>
+  <aside class="notes">
+    It works. On the left is the JSON endpoint. On the right is Grafana scraping Prometheus.
+
+    docker compose up gives you a primary, a replica, Prometheus and Grafana. Pause the replica
+    container and watch the gap climb.
+
+    One function worth mentioning: pgpulse_collected_at. Zero means the worker never ran. Stale
+    means it stopped. That's the health check for the health checker. In SQL today, it should be
+    a metric, that's the next commit.
+  </aside>
+</section>
+
+<section>
+  <h2 class="rule">Thanks</h2>
+  <div class="cols wide-left">
+    <div>
+      <p class="small"><a href="https://github.com/HarshitRuwali/pgpulse">github.com/HarshitRuwali/pgpulse</a></p>
+      <p class="small"><a href="https://blog.sp00fexpl01t.rocks/building-pgpule/">blog.sp00fexpl01t.rocks</a></p>
+      <p class="small"><a href="https://x.com/harshitruwali">x.com/harshitruwali</a></p>
+      <p style="margin-top:1.2em"><span class="pill ok">Questions</span></p>
+    </div>
+    <div class="qr">
+      <img src="assets/x-qr.svg" alt="QR code to x.com/harshitruwali">
+      <span>Reach out</span>
+    </div>
+  </div>
+  <aside class="notes">
+    It's a meetup. If you don't know, say "I don't know" and it's completely fine.
+
+    Leave this slide up during questions so people can scan it.
+
+    Ready answers:
+    • cost on a primary: two SPI queries and one libpq round trip per 10s, ~10 KB shared memory,
+      no writes. Not benchmarked.
+    • worker crashes: postmaster restarts it after 10s, collected_at goes stale.
+    • why not pgwatch / postgres_exporter: they publish raw numbers, this computes one verdict
+      next to the data. And it was a learning project.
+    • RDS/Aurora: no, no filesystem access.
+    • versions: pg13 to pg18 feature flags, built and tested on 18. Compiled per major version.
+    • testing: cargo test for the evaluator, cargo pgrx test in-DB, docker compose end to end.
+  </aside>
+</section>
+
+</div>
+</div>
+
+<script src="vendor/reveal/dist/reveal.js"></script>
+<script src="vendor/reveal/plugin/notes/notes.js"></script>
+<script src="vendor/reveal/plugin/highlight/highlight.js"></script>
+<script>
+Reveal.initialize({
+  hash: true,
+  // linear: left/right walk EVERY slide, including vertical children.
+  // Without this, the arrow keys skip the "What happened + The fix" slides.
+  navigationMode: 'linear',
+  slideNumber: 'c/t',
+  width: 1280,
+  height: 760,
+  margin: 0.075,
+  minScale: 0.2,
+  maxScale: 1.6,
+  transition: 'fade',
+  transitionSpeed: 'fast',
+  backgroundTransition: 'fade',
+  plugins: [ RevealNotes, RevealHighlight ]
+});
+</script>
+</body>
+</html>
